@@ -112,6 +112,7 @@ h2 { margin: 0; font-family: var(--font-display); font-stretch: 85%; font-weight
 /* Mapa */
 .map-box { position: relative; }
 .map-box svg { display: block; width: 100%; height: auto; }
+.map-land { fill: var(--sunken); stroke: none; }
 .map-border { fill: none; stroke: var(--muted); stroke-width: 1.1; stroke-linejoin: round; opacity: .55; }
 .map-st { cursor: pointer; }
 .map-st circle { stroke: var(--surface); stroke-width: 2; }
@@ -664,6 +665,10 @@ function renderMap() {
   defs.append(clip);
   svg.append(defs);
   const g = el("g", { "clip-path": "url(#mapClip)" });
+  if (outline) {
+    const d = outline.map((ring) => ring.map(([lo, la], q) => `${q ? "L" : "M"}${P(lo, la).map((v) => v.toFixed(1)).join(" ")}`).join("") + "Z").join("");
+    g.append(el("path", { class: "map-land", d }));
+  }
   if (borders) {
     for (const line of borders) {
       g.append(el("polyline", { class: "map-border", points: line.map(([lon, lat]) => P(lon, lat).map((v) => v.toFixed(1)).join(",")).join(" ") }));
@@ -1142,9 +1147,25 @@ const FC_FIELDS = {
   oblacnost: { label: "Oblačnosť", unit: "%", digits: 0, ticks: [0, 25, 50, 75, 100], stops: [[0, [198, 225, 245]], [50, [172, 184, 196]], [100, [112, 122, 134]]] },
   vietor: { label: "Vietor", unit: "m/s", digits: 1, ticks: [0, 5, 10, 15, 20, 25], stops: WIND_STOPS },
   naraz: { label: "Nárazy", unit: "m/s", digits: 1, ticks: [0, 5, 10, 15, 20, 25, 30, 35], stops: WIND_STOPS },
-  tlak: { label: "Tlak", unit: "hPa", digits: 1, ticks: [990, 1000, 1010, 1020, 1030, 1040],
+  tlak: { label: "Tlak", unit: "hPa", digits: 1, adaptive: [[78, 62, 150], [62, 120, 196], [96, 178, 196], [214, 224, 196], [240, 192, 112], [214, 112, 64]],
+    ticks: [990, 1000, 1010, 1020, 1030, 1040],
     stops: [[990, [88, 60, 160]], [1000, [70, 130, 200]], [1010, [140, 200, 210]], [1015, [236, 236, 214]], [1020, [245, 205, 120]], [1030, [225, 120, 60]], [1040, [170, 40, 40]]] },
 };
+/* Pri tlaku sa stupnica prispôsobí rozsahu celého behu modelu: nad Slovenskom sú rozdiely len pár hPa. */
+function adaptScale(name, data) {
+  const cfg = FC_FIELDS[name];
+  if (!cfg.adaptive) return;
+  let lo = Infinity, hi = -Infinity;
+  for (const step of data.hodnoty) if (step) for (const v of step) { const x = v / data.nasobok; if (x < lo) lo = x; if (x > hi) hi = x; }
+  if (!Number.isFinite(lo)) return;
+  const tick = niceStep(Math.max(4, hi - lo), 5);
+  lo = Math.floor(lo / tick) * tick; hi = Math.ceil(hi / tick) * tick;
+  if (hi - lo < 2 * tick) hi = lo + 2 * tick;
+  cfg.ticks = [];
+  for (let v = lo; v <= hi + tick / 2; v += tick) cfg.ticks.push(Math.round(v));
+  cfg.stops = cfg.adaptive.map((c, q) => [lo + ((hi - lo) * q) / (cfg.adaptive.length - 1), c]);
+  if (fc.geom) delete fc.geom.lut[name];
+}
 const FC_NOTES = {
   t: "Teplota 2 m nad terénom modelu. Model terén vyhladzuje, na horách môže byť skutočnosť chladnejšia.",
   oblacnost: "Celková oblačnosť: 0 % je jasno, 100 % zamračené.",
@@ -1153,8 +1174,11 @@ const FC_NOTES = {
   tlak: "Tlak prepočítaný na hladinu mora, preto sa líši od tlaku na staniciach.",
 };
 // Mestá na orientáciu: index stanice, ktorej polohu použijeme, a krátky názov
-const FC_CITIES = [[11810, "Bratislava"], [11855, "Nitra"], [11803, "Trenčín"], [11865, "Žilina"], [11898, "Banská Bystrica"],
-  [11934, "Poprad"], [11969, "Košice"], [11962, "Bardejov"], [11982, "Michalovce"], [11942, "Rimavská Sobota"]];
+// Mestá na orientáciu: [názov, zemepisná šírka, dĺžka, zobraziť aj na mobile]
+const FC_CITIES = [["Bratislava", 48.1486, 17.1077, 1], ["Nitra", 48.3069, 18.0864, 0], ["Trenčín", 48.8945, 18.0444, 0],
+  ["Žilina", 49.2231, 18.7394, 1], ["Banská Bystrica", 48.7395, 19.1535, 1], ["Poprad", 49.0598, 20.2975, 1],
+  ["Prešov", 49.0018, 21.2393, 0], ["Košice", 48.7164, 21.2611, 1], ["Bardejov", 49.2918, 21.2727, 0],
+  ["Michalovce", 48.7543, 21.9195, 0], ["Rimavská Sobota", 48.3820, 20.0218, 0]];
 
 const fc = { meta: null, field: FC_FIELDS[store.get("pocasie.fcpole")] ? store.get("pocasie.fcpole") : "t", step: 0, cache: new Map(), geom: null, timer: null, point: new Map() };
 
@@ -1211,6 +1235,7 @@ async function loadForecastMeta() {
 async function ensureField(name) {
   if (fc.cache.has(name)) return fc.cache.get(name);
   const d = await getJSON(URLS.field(name));
+  adaptScale(name, d);
   fc.cache.set(name, d);
   return d;
 }
@@ -1247,81 +1272,271 @@ function setPlaying(on) {
   b.innerHTML = fc.timer ? `${PAUSE_ICON} Zastaviť` : `${PLAY_ICON} Prehrať`;
 }
 
+/* Geometria mriežky ALADIN (Lambertova kužeľová projekcia, rovnaké konštanty ako aladin.py) */
+const LAM = (() => {
+  const R = 6371229, rad = Math.PI / 180, phi0 = 46.2447 * rad, lon0 = 17 * rad, DX = 4500;
+  const n = Math.sin(phi0);
+  const F = (Math.cos(phi0) * Math.pow(Math.tan(Math.PI / 4 + phi0 / 2), n)) / n;
+  const rho0 = (R * F) / Math.pow(Math.tan(Math.PI / 4 + phi0 / 2), n);
+  const fwd = (lat, lon) => {
+    const rho = (R * F) / Math.pow(Math.tan(Math.PI / 4 + (lat * rad) / 2), n), th = n * (lon * rad - lon0);
+    return [rho * Math.sin(th), rho0 - rho * Math.cos(th)];
+  };
+  const [x1, y1] = fwd(47.74175, 16.849607);
+  const inv = (i, j) => {
+    const x = x1 + i * DX, y = y1 + j * DX;
+    const rho = Math.sign(n) * Math.hypot(x, rho0 - y), th = Math.atan2(x, rho0 - y);
+    return [(2 * Math.atan(Math.pow((R * F) / rho, 1 / n)) - Math.PI / 2) / rad, (lon0 + th / n) / rad];
+  };
+  return { toGrid: (lat, lon) => { const [x, y] = fwd(lat, lon); return [(x - x1) / DX, (y - y1) / DX]; }, toLatLon: inv };
+})();
+
+let outline = null;
+fetch("slovensko.json").then((r) => r.json()).then((d) => { outline = d.obrys; if (fc.meta) { fc.geom = null; drawForecast(); } if (state.data) renderMap(); }).catch(() => {});
+
 function forecastGeom(w) {
-  const g = fc.meta.mriezka, nx = g.nx, s = w / MAP.w;
-  const n = g.rohy.lat.length, px = new Float32Array(n), py = new Float32Array(n);
-  for (let k = 0; k < n; k++) { const [x, y] = proj(g.rohy.lon[k], g.rohy.lat[k]); px[k] = x * s; py[k] = y * s; }
-  const cells = new Float32Array(g.aktivne.length * 8), centers = new Float32Array(g.aktivne.length * 2);
-  g.aktivne.forEach((k, c) => {
-    const i = k % nx, j = Math.floor(k / nx);
-    const a = j * (nx + 1) + i, ids = [a, a + 1, a + nx + 2, a + nx + 1];
-    ids.forEach((id, q) => { cells[c * 8 + q * 2] = px[id]; cells[c * 8 + q * 2 + 1] = py[id]; });
-    centers[c * 2] = (px[a] + px[a + nx + 2]) / 2; centers[c * 2 + 1] = (py[a] + py[a + nx + 2]) / 2;
-  });
-  return { w, s, cells, centers };
+  const g = fc.meta.mriezka, NX = g.nx, NY = g.ny, s = w / MAP.w, h = Math.round((w * MAP.h) / MAP.w);
+  const r = w > 700 ? 2 : 1;                      // na širokej obrazovke počítame každý druhý pixel a zväčšíme hladko
+  const ow = Math.ceil(w / r), oh = Math.ceil(h / r);
+  const base = new Int32Array(ow * oh).fill(-1), fx = new Float32Array(ow * oh), fy = new Float32Array(ow * oh);
+  for (let y = 0; y < oh; y++) {
+    const lat = MAP.lat1 - (((y + 0.5) * r) / s) / MAP.scale;
+    for (let x = 0; x < ow; x++) {
+      const lon = (((x + 0.5) * r) / s) / (MAP.kx * MAP.scale) + MAP.lon0;
+      const [gi, gj] = LAM.toGrid(lat, lon);
+      const i0 = Math.floor(gi), j0 = Math.floor(gj);
+      if (i0 < 0 || j0 < 0 || i0 >= NX - 1 || j0 >= NY - 1) continue;
+      const p = y * ow + x;
+      base[p] = j0 * NX + i0; fx[p] = gi - i0; fy[p] = gj - j0;
+    }
+  }
+  // poloha uzlov mriežky na mape (pre izočiary)
+  const nodeX = new Float32Array(NX * NY), nodeY = new Float32Array(NX * NY);
+  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+    const [la, lo] = LAM.toLatLon(i, j), [x, y] = proj(lo, la);
+    nodeX[j * NX + i] = x * s; nodeY[j * NX + i] = y * s;
+  }
+  let path = null;
+  if (outline) {
+    path = new Path2D();
+    for (const ring of outline) {
+      ring.forEach(([lo, la], q) => { const [x, y] = proj(lo, la); q ? path.lineTo(x * s, y * s) : path.moveTo(x * s, y * s); });
+      path.closePath();
+    }
+  }
+  const off = document.createElement("canvas");
+  off.width = ow; off.height = oh;
+  return { w, h, s, r, ow, oh, NX, NY, base, fx, fy, nodeX, nodeY, path, off, offCtx: off.getContext("2d"), lut: {} };
+}
+
+function fieldGrid(vals, mul) {
+  const g = fc.meta.mriezka, grid = new Float32Array(g.nx * g.ny).fill(NaN);
+  if (vals) g.aktivne.forEach((k, c) => { grid[k] = vals[c] / mul; });
+  return grid;
+}
+
+function sampleGrid(grid, p, G) {
+  const b = G.base[p];
+  if (b < 0) return NaN;
+  const wx = G.fx[p], wy = G.fy[p], NX = G.NX;
+  const v = [grid[b], grid[b + 1], grid[b + NX], grid[b + NX + 1]], w = [(1 - wx) * (1 - wy), wx * (1 - wy), (1 - wx) * wy, wx * wy];
+  let sum = 0, ws = 0;
+  for (let q = 0; q < 4; q++) if (!Number.isNaN(v[q])) { sum += v[q] * w[q]; ws += w[q]; }
+  return ws > 0.05 ? sum / ws : NaN;
+}
+
+function colorLut(cfg, name) {
+  const lo = cfg.ticks[0], hi = cfg.ticks[cfg.ticks.length - 1], f = cfg.log ? Math.log : (x) => x;
+  const N = 512, lut = new Uint8ClampedArray(N * 4);
+  for (let q = 0; q < N; q++) {
+    const a = q / (N - 1), v = cfg.log ? Math.exp(f(lo) + a * (f(hi) - f(lo))) : lo + a * (hi - lo);
+    const c = scaleColor(cfg, v) || [0, 0, 0];
+    lut.set([c[0], c[1], c[2], 255], q * 4);
+  }
+  return { lut, N, flo: f(lo), fhi: f(hi), f, name };
+}
+
+// Izočiary: hladiny pre jednotlivé veličiny
+const FC_LINES = {
+  t: { step: 2, label: (v) => `${fmt(v, 0)}°` },
+  tlak: { step: 2, label: (v) => String(Math.round(v)), strong: 1 },
+  vietor: { levels: [5, 10, 15, 20, 25], label: (v) => `${fmt(v, 0)}` },
+  naraz: { levels: [10, 15, 20, 25, 30], label: (v) => `${fmt(v, 0)}` },
+};
+
+function contourSegments(grid, G, level) {
+  const { NX, NY, nodeX, nodeY } = G, segs = [];
+  const P = (ka, kb, va, vb) => {
+    const t = (level - va) / (vb - va);
+    return [nodeX[ka] + (nodeX[kb] - nodeX[ka]) * t, nodeY[ka] + (nodeY[kb] - nodeY[ka]) * t];
+  };
+  for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) {
+    const a = j * NX + i, b = a + 1, c = a + NX + 1, d = a + NX;
+    const va = grid[a], vb = grid[b], vc = grid[c], vd = grid[d];
+    if (Number.isNaN(va) || Number.isNaN(vb) || Number.isNaN(vc) || Number.isNaN(vd)) continue;
+    const idx = (va >= level) | ((vb >= level) << 1) | ((vc >= level) << 2) | ((vd >= level) << 3);
+    if (idx === 0 || idx === 15) continue;
+    const e = { ab: () => P(a, b, va, vb), bc: () => P(b, c, vb, vc), dc: () => P(d, c, vd, vc), ad: () => P(a, d, va, vd) };
+    const add = (p, q) => segs.push([...e[p](), ...e[q]()]);
+    switch (idx) {
+      case 1: case 14: add("ab", "ad"); break;
+      case 2: case 13: add("ab", "bc"); break;
+      case 3: case 12: add("ad", "bc"); break;
+      case 4: case 11: add("bc", "dc"); break;
+      case 6: case 9: add("ab", "dc"); break;
+      case 7: case 8: add("ad", "dc"); break;
+      case 5: case 10: {
+        const center = (va + vb + vc + vd) / 4 >= level;
+        if ((idx === 5) === center) { add("ab", "bc"); add("ad", "dc"); } else { add("ab", "ad"); add("bc", "dc"); }
+        break;
+      }
+    }
+  }
+  return segs;
 }
 
 function drawForecast() {
   if (!fc.meta || !fc.meta.kroky.length) return;
   const box = $("#fcMap"), canvas = $("#fcCanvas");
-  const w = Math.round(box.clientWidth), h = Math.round((w * MAP.h) / MAP.w), dpr = window.devicePixelRatio || 1;
+  const w = Math.round(box.clientWidth), dpr = window.devicePixelRatio || 1;
   if (!w) return;
-  if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
-  canvas.style.height = `${h}px`;
   if (!fc.geom || fc.geom.w !== w) fc.geom = forecastGeom(w);
+  const G = fc.geom, h = G.h;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+  canvas.style.height = `${h}px`;
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   const css = getComputedStyle(document.documentElement);
-  const base = css.getPropertyValue("--line").trim(), ink = css.getPropertyValue("--ink").trim(),
-    surface = css.getPropertyValue("--surface").trim(), font = css.getPropertyValue("--font-body").trim();
+  const land = css.getPropertyValue("--sunken").trim(), ink = css.getPropertyValue("--ink").trim(),
+    surface = css.getPropertyValue("--surface").trim(), font = css.getPropertyValue("--font-body").trim(),
+    dataFont = css.getPropertyValue("--font-data").trim();
   const cfg = FC_FIELDS[fc.field], data = fc.cache.get(fc.field);
   const vals = data ? data.hodnoty[fc.step] : null, mul = data ? data.nasobok : 1;
-  const { cells } = fc.geom;
-  for (let c = 0; c < cells.length / 8; c++) {
-    const v = vals ? vals[c] / mul : null;
-    const col = scaleColor(cfg, v);
-    ctx.fillStyle = col ? rgb(col) : base;
-    ctx.strokeStyle = ctx.fillStyle;
-    ctx.lineWidth = 0.6;
-    ctx.beginPath();
-    ctx.moveTo(cells[c * 8], cells[c * 8 + 1]);
-    for (let q = 1; q < 4; q++) ctx.lineTo(cells[c * 8 + q * 2], cells[c * 8 + q * 2 + 1]);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
+  const grid = fieldGrid(vals, mul);
+  fc.lastGrid = vals ? grid : null;
+
+  // 1) farebné pole, hladko interpolované z mriežky modelu
+  if (!G.lut[fc.field]) G.lut[fc.field] = colorLut(cfg, fc.field);
+  const L = G.lut[fc.field], img = G.offCtx.createImageData(G.ow, G.oh), px = img.data;
+  if (vals) {
+    const span = L.fhi - L.flo, minV = cfg.min;
+    for (let p = 0; p < G.base.length; p++) {
+      const v = sampleGrid(grid, p, G);
+      if (Number.isNaN(v) || (minV !== undefined && v < minV * 0.3)) continue;
+      let q = Math.round(((L.f(Math.max(v, 1e-6)) - L.flo) / span) * (L.N - 1));
+      q = q < 0 ? 0 : q >= L.N ? L.N - 1 : q;
+      const o = p * 4, lq = q * 4;
+      px[o] = L.lut[lq]; px[o + 1] = L.lut[lq + 1]; px[o + 2] = L.lut[lq + 2];
+      if (minV !== undefined) {
+        // okraj dažďa plynulo zoslabne; slabé zrážky sú priesvitnejšie, aby bolo vidno, kde neprší
+        const fade = Math.min(1, (v - minV * 0.3) / (minV * 1.2));
+        px[o + 3] = fade * Math.min(255, 150 + q * 0.4);
+      } else px[o + 3] = 255;
+    }
   }
+  G.offCtx.putImageData(img, 0, 0);
+
+  ctx.save();
+  if (G.path) {
+    ctx.fillStyle = land; ctx.fill(G.path);
+    ctx.clip(G.path);
+  }
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(G.off, 0, 0, G.ow * G.r, G.oh * G.r);
+
+  // 2) izočiary s popiskami
+  const lines = FC_LINES[fc.field], lineLabels = [];
+  if (vals && lines) {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of grid) if (!Number.isNaN(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    let levels = lines.levels;
+    if (!levels) {
+      const step = lines.step * (hi - lo > 24 * lines.step ? 2 : 1);
+      levels = [];
+      for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) levels.push(Math.round(v * 10) / 10);
+    }
+    const placed = [];
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (const level of levels) {
+      const segs = contourSegments(grid, G, level);
+      if (!segs.length) continue;
+      const strong = lines.strong && Math.round(level) % 10 === 0;
+      ctx.strokeStyle = ink; ctx.globalAlpha = strong ? 0.6 : 0.38; ctx.lineWidth = strong ? 1.4 : 0.9;
+      ctx.beginPath();
+      for (const [x0, y0, x1, y1] of segs) { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); }
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      // popis: segment blízko stredu mapy, ďaleko od ostatných popisov a vnútri Slovenska
+      const cand = segs.map((sg) => [(sg[0] + sg[2]) / 2, (sg[1] + sg[3]) / 2])
+        .filter(([x, y]) => x > 30 && x < w - 30 && y > 14 && y < h - 14 && (!G.path || ctx.isPointInPath(G.path, x * dpr, y * dpr)))
+        .sort((a, b) => Math.abs(a[0] - w * 0.55) - Math.abs(b[0] - w * 0.55));
+      const spot = cand.find(([x, y]) => placed.every(([px2, py2]) => Math.hypot(px2 - x, py2 - y) > 80));
+      if (spot) { placed.push(spot); lineLabels.push([lines.label(level), spot[0], spot[1]]); }
+    }
+  }
+  ctx.restore();
+  // popisy izočiar až po zrušení orezania, aby sa pri hranici neodstrihli
+  const labelBoxes = [];
+  if (lineLabels.length) {
+    const lsz = w < 500 ? 10 : 11;
+    ctx.font = `600 ${lsz}px ${dataFont}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const [txt, x, y] of lineLabels) {
+      const tw = ctx.measureText(txt).width;
+      labelBoxes.push({ x: x - tw / 2 - 2, y: y - lsz / 2 - 2, w: tw + 4, h: lsz + 4 });
+      ctx.lineWidth = 3; ctx.strokeStyle = surface; ctx.globalAlpha = 0.85; ctx.strokeText(txt, x, y);
+      ctx.globalAlpha = 1; ctx.fillStyle = ink; ctx.fillText(txt, x, y);
+    }
+    ctx.textAlign = "left";
+  }
+
+  // 3) hranice: susedné štáty jemne, obrys Slovenska výraznejšie
   if (borders) {
-    ctx.strokeStyle = ink; ctx.globalAlpha = 0.6; ctx.lineWidth = 1.1; ctx.lineJoin = "round";
+    ctx.strokeStyle = ink; ctx.globalAlpha = 0.25; ctx.lineWidth = 0.8; ctx.lineJoin = "round";
     for (const line of borders) {
       ctx.beginPath();
-      line.forEach(([lo, la], q) => { const [x, y] = proj(lo, la); q ? ctx.lineTo(x * fc.geom.s, y * fc.geom.s) : ctx.moveTo(x * fc.geom.s, y * fc.geom.s); });
+      line.forEach(([lo, la], q) => { const [x, y] = proj(lo, la); q ? ctx.lineTo(x * G.s, y * G.s) : ctx.moveTo(x * G.s, y * G.s); });
       ctx.stroke();
     }
-    ctx.globalAlpha = 1;
   }
-  if (state.data) {
-    ctx.font = `600 ${w < 500 ? 11 : 12.5}px ${font}`;
+  if (G.path) { ctx.globalAlpha = 0.75; ctx.strokeStyle = ink; ctx.lineWidth = 1.2; ctx.stroke(G.path); }
+  ctx.globalAlpha = 1;
+
+  // 4) mestá (na mobile len hlavné), popisy sa neprekrývajú
+  {
+    const fsz = w < 500 ? 11 : 12.5;
+    ctx.font = `600 ${fsz}px ${font}`;
     ctx.textBaseline = "middle";
-    for (const [id, name] of FC_CITIES) {
-      const st = state.data.stanice.find((x) => x.id === id);
-      if (!st || !st.lat) continue;
-      const [x, y] = proj(st.lon, st.lat).map((v) => v * fc.geom.s);
+    const cities = w < 500 ? FC_CITIES.filter((c) => c[3]) : FC_CITIES;
+    const boxes = [...labelBoxes];
+    for (const [name, lat, lon] of cities) {
+      const [x, y] = proj(lon, lat).map((v) => v * G.s);
+      const tw = ctx.measureText(name).width;
+      const tries = [[x + 5, y - 7, "left"], [x - 5, y - 7, "right"], [x, y - 14, "center"], [x, y + 12, "center"]];
+      let spot = null;
+      for (const [tx, ty, al] of tries) {
+        const x0 = al === "left" ? tx : al === "right" ? tx - tw : tx - tw / 2, r0 = { x: x0 - 2, y: ty - fsz / 2 - 2, w: tw + 4, h: fsz + 4 };
+        if (r0.x < 0 || r0.x + r0.w > w || r0.y < 0 || r0.y + r0.h > h) continue;
+        if (boxes.some((b) => r0.x < b.x + b.w && r0.x + r0.w > b.x && r0.y < b.y + b.h && r0.y + r0.h > b.y)) continue;
+        spot = [tx, ty, al]; boxes.push(r0); break;
+      }
       ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
-      ctx.lineWidth = 3; ctx.strokeStyle = surface; ctx.lineJoin = "round";
-      const tw = ctx.measureText(name).width, left = x + 5 + tw > w - 2;
-      ctx.textAlign = left ? "right" : "left";
-      const tx = left ? x - 5 : x + 5;
-      ctx.strokeText(name, tx, y - 7); ctx.fillText(name, tx, y - 7);
-      ctx.textAlign = "left";
+      if (!spot) continue;
+      ctx.lineWidth = 3; ctx.strokeStyle = surface; ctx.lineJoin = "round"; ctx.textAlign = spot[2];
+      ctx.strokeText(name, spot[0], spot[1]); ctx.fillText(name, spot[0], spot[1]);
     }
+    ctx.textAlign = "left";
   }
   const k = fc.meta.kroky[fc.step];
   $("#fcTime").textContent = longTime(k.cas);
   $("#fcLead").textContent = `+${k.h} h od behu modelu`;
   let note = FC_NOTES[fc.field] || "";
   if (fc.field === "zrazky") {
-    note = vals ? `Intenzita zrážok v mm za hodinu, priemer za ${k.okno === 1 ? "hodinu" : `${k.okno} h`} pred zobrazeným časom.` :
+    note = vals ? `Intenzita zrážok v mm za hodinu, priemer za ${k.okno === 1 ? "hodinu" : `${k.okno} h`} pred zobrazeným časom. Bez farby = neprší.` :
       "V počiatočnom čase modelu zrážky nie sú. Posuňte čas dopredu.";
   } else if (fc.field === "naraz" && !vals) note = "V počiatočnom čase modelu nárazy nie sú. Posuňte čas dopredu.";
+  if (lines && vals) note += fc.field === "tlak" ? " Čiary sú izobary po 2 hPa." : fc.field === "t" ? " Čiary sú izotermy." : " Čiary spájajú miesta s rovnakou rýchlosťou vetra.";
   $("#fcNote").textContent = note;
   drawForecastLegend(cfg);
 }
@@ -1337,7 +1552,11 @@ function drawForecastLegend(cfg) {
     const c = scaleColor(cfg, v) || cfg.stops[0][1];
     svg.append(el("rect", { x: 8 + a * (W - 16), y: 2, width: (W - 16) / N + 0.6, height: 9, fill: rgb(c) }));
   }
-  for (const t of cfg.ticks) svg.append(el("text", { x: X(t), y: 26, "text-anchor": "middle" }, fmt(t, t < 1 && t > 0 ? 1 : 0)));
+  cfg.ticks.forEach((t, q) => {
+    const anchor = q === 0 ? "start" : q === cfg.ticks.length - 1 ? "end" : "middle";
+    const txt = cfg.unit === "hPa" ? String(t) : fmt(t, t < 1 && t > 0 ? 1 : 0);
+    svg.append(el("text", { x: anchor === "start" ? X(t) - 4 : anchor === "end" ? X(t) + 4 : X(t), y: 26, "text-anchor": anchor }, txt));
+  });
   const box = $("#fcLegend");
   box.replaceChildren(svg);
   const unit = document.createElement("span");
@@ -1346,33 +1565,31 @@ function drawForecastLegend(cfg) {
 }
 
 let fcTip = null;
+const hitCtx = document.createElement("canvas").getContext("2d");
 $("#fcCanvas").addEventListener("pointermove", (e) => {
-  if (!fc.geom) return;
+  const G = fc.geom;
+  if (!G) return;
   const r = e.currentTarget.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-  const { centers } = fc.geom;
-  let best = -1, bd = Infinity;
-  for (let c = 0; c < centers.length / 2; c++) {
-    const d = (centers[c * 2] - x) ** 2 + (centers[c * 2 + 1] - y) ** 2;
-    if (d < bd) { bd = d; best = c; }
-  }
-  const cellPx = 4.5 / 111 * MAP.scale * fc.geom.s * 1.6;
   const box = $("#fcMap");
   fcTip = fcTip || Object.assign(document.createElement("div"), { className: "map-tip" });
-  if (best < 0 || bd > cellPx * cellPx) { fcTip.remove(); return; }
-  const data = fc.cache.get(fc.field), vals = data && data.hodnoty[fc.step], cfg = FC_FIELDS[fc.field];
-  const v = vals ? vals[best] / data.nasobok : null;
+  const inside = G.path ? hitCtx.isPointInPath(G.path, x, y) : true;
+  const ox = Math.floor(x / G.r), oy = Math.floor(y / G.r);
+  if (!inside || ox < 0 || oy < 0 || ox >= G.ow || oy >= G.oh) { fcTip.remove(); return; }
+  const cfg = FC_FIELDS[fc.field];
+  const v = fc.lastGrid ? sampleGrid(fc.lastGrid, oy * G.ow + ox, G) : NaN;
   let near = "";
   if (state.data) {
     let nd = Infinity;
     for (const st of state.data.stanice) {
       if (!st.lat || !st.nazov) continue;
-      const [sx, sy] = proj(st.lon, st.lat).map((q) => q * fc.geom.s);
+      const [sx, sy] = proj(st.lon, st.lat).map((q) => q * G.s);
       const d = (sx - x) ** 2 + (sy - y) ** 2;
       if (d < nd) { nd = d; near = st.nazov; }
     }
-    if (nd > (cellPx * 3) ** 2) near = "";
+    if (nd > 30 ** 2) near = "";
   }
-  fcTip.textContent = `${near ? near + " · " : ""}${v === null ? "—" : fmt(v, cfg.digits)} ${cfg.unit}`;
+  const shown = Number.isNaN(v) ? "—" : cfg.min !== undefined && v < cfg.min ? "bez zrážok" : `${fmt(v, cfg.digits)} ${cfg.unit}`;
+  fcTip.textContent = `${near ? near + " · " : ""}${shown}`;
   fcTip.style.left = `${x}px`; fcTip.style.top = `${y}px`;
   box.append(fcTip);
 });

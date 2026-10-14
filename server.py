@@ -618,12 +618,14 @@ def build_forecast_meta(fc: Forecast) -> dict:
 
 
 def build_forecast_field(fc: Forecast, name: str) -> dict:
+    # zrážky na 0,01 mm/h, aby slabý dážď mal na mape plynulý okraj; ostatné na 0,1
+    mul = 100 if name == "zrazky" else 10
     with fc.lock:
         values = []
         for s in fc.steps:
             arr = s["polia"].get(name)
-            values.append(None if arr is None else [round(v * 10) for v in arr])
-        return {"pole": name, "jednotka": FORECAST_FIELDS[name][0], "nasobok": 10, "hodnoty": values}
+            values.append(None if arr is None else [round(v * mul) for v in arr])
+        return {"pole": name, "jednotka": FORECAST_FIELDS[name][0], "nasobok": mul, "hodnoty": values}
 
 
 def build_forecast_point(fc: Forecast, lat: float, lon: float) -> dict | None:

@@ -38,6 +38,7 @@ KEEP_MINUTES = 80 * 60        # minútové merania: posledných 80 minút
 KEEP_BINS = 25 * 3600         # 10-minútové súhrny: posledných 25 hodín
 MAX_FILES_PER_RUN = 72        # strop sťahovania, keby GitHub dlho nespúšťal
 WU_RUNS_PER_DAY = 144
+FORECAST_FORMAT = 2           # zvýšiť pri zmene tvaru uložených polí predpovede (vynúti nové spracovanie)
 WU_BUDGET = 1200
 
 
@@ -308,14 +309,14 @@ def update_forecast(shmu: srv.Shmu, folder: Path, state: dict) -> dict:
         run_path, run_ts, files = coll.pick_run()
         hours = [h for h, _ in files]
         have = (folder / "predpoved.json").exists() and all((folder / f"predpoved-{n}.json").exists() for n in srv.FORECAST_FIELDS)
-        if state.get("zdroj") == run_path and state.get("hodiny") == hours and have:
+        if state.get("zdroj") == run_path and state.get("hodiny") == hours and have and state.get("format") == FORECAST_FORMAT:
             log("ALADIN: beh sa nezmenil.")
         else:
             coll.load(run_path, run_ts, files)
             dump(folder / "predpoved.json", srv.build_forecast_meta(fc))
             for name in srv.FORECAST_FIELDS:
                 dump(folder / f"predpoved-{name}.json", srv.build_forecast_field(fc, name))
-            state.update(zdroj=run_path, hodiny=hours, beh=run_ts)
+            state.update(zdroj=run_path, hodiny=hours, beh=run_ts, format=FORECAST_FORMAT)
         status.update(stiahnute=len(hours), spolu=len(hours))
     except Exception as err:
         status.update(stav="chyba", chyba=str(err))
