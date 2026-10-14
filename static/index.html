@@ -1,0 +1,1511 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Počasie zo staníc SHMÚ</title>
+<meta name="description" content="Aktuálne merania automatických meteorologických staníc SHMÚ: teplota, vietor, zrážky, tlak a vlhkosť.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%2213%22 fill=%22%230a6b70%22/%3E%3Cpath d=%22M16 7v13%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22/%3E%3Ccircle cx=%2216%22 cy=%2222%22 r=%223.5%22 fill=%22white%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+/* Rozloženie: prístrojová doska – vľavo mapa a tabuľka všetkých staníc,
+   vpravo prilepený panel vybranej stanice s grafom za 24 hodín. */
+:root {
+  --bg: #e9eef1;
+  --surface: #ffffff;
+  --sunken: #f3f6f8;
+  --ink: #142029;
+  --muted: #5a6a76;
+  --line: #d2dbe1;
+  --accent: #0a6b70;
+  --accent-ink: #ffffff;
+  --ok: #2e7d4f;
+  --warn: #b26a00;
+  --bad: #b3261e;
+  --c-temp: #d0532f;
+  --c-dew: #2f7fa8;
+  --c-wind: #0a6b70;
+  --c-gust: #8b5cc4;
+  --c-rain: #2f6fd0;
+  --c-press: #6b5a2e;
+  --c-hum: #1f8a7a;
+  --grid: #e3e9ed;
+  --font-display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e151a; --surface: #152027; --sunken: #111b21; --ink: #e2e9ed; --muted: #8fa1ad;
+    --line: #25333c; --accent: #4cc2bd; --accent-ink: #062224; --ok: #5fc58b; --warn: #e3a33b;
+    --bad: #ff8a80; --c-temp: #ff8a5c; --c-dew: #6cc0ec; --c-wind: #4cc2bd; --c-gust: #b99af0;
+    --c-rain: #6fa4ff; --c-press: #d2bd84; --c-hum: #59d1bd; --grid: #1f2b33; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e151a; --surface: #152027; --sunken: #111b21; --ink: #e2e9ed; --muted: #8fa1ad;
+  --line: #25333c; --accent: #4cc2bd; --accent-ink: #062224; --ok: #5fc58b; --warn: #e3a33b;
+  --bad: #ff8a80; --c-temp: #ff8a5c; --c-dew: #6cc0ec; --c-wind: #4cc2bd; --c-gust: #b99af0;
+  --c-rain: #6fa4ff; --c-press: #d2bd84; --c-hum: #59d1bd; --grid: #1f2b33; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 var(--font-body);
+}
+.wrap { max-width: 1320px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 40px; display: grid; gap: 18px; }
+@media (min-width: 720px) { .wrap { padding-inline: 28px; } }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.label { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+/* Hlavička */
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+h1 {
+  margin: 0; font-family: var(--font-display); font-stretch: 75%; font-weight: 800;
+  font-size: clamp(30px, 4.6vw, 46px); line-height: 1; letter-spacing: -.01em; text-wrap: balance;
+}
+.subtitle { margin: 6px 0 0; color: var(--muted); }
+.status { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 13.5px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.dot.warn { background: var(--warn); }
+.dot.bad { background: var(--bad); }
+.banner { padding: 10px 14px; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--warn) 50%, var(--line)); background: color-mix(in srgb, var(--warn) 10%, var(--surface)); font-size: 14px; }
+.banner.bad { border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); background: color-mix(in srgb, var(--bad) 9%, var(--surface)); }
+
+/* Extrémy */
+.extremes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 900px) { .extremes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.extreme {
+  text-align: left; cursor: pointer; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; min-width: 0;
+}
+.extreme:hover:not(:disabled) { border-color: var(--accent); }
+.extreme:disabled { cursor: default; }
+.extreme .val { font-family: var(--font-display); font-stretch: 80%; font-weight: 700; font-size: 30px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.extreme .val small { font-size: 15px; font-weight: 600; color: var(--muted); margin-left: 3px; }
+.extreme .where { font-size: 13.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Hlavná mriežka */
+.main { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 18px; align-items: start; }
+.col { display: grid; gap: 18px; min-width: 0; }
+@media (max-width: 1020px) {
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .detail-col { order: -1; }
+}
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+@media (min-width: 720px) { .panel { padding: 18px 20px; } }
+.panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 12px; }
+h2 { margin: 0; font-family: var(--font-display); font-stretch: 85%; font-weight: 700; font-size: 20px; line-height: 1.2; text-wrap: balance; }
+
+/* Mapa */
+.map-box { position: relative; }
+.map-box svg { display: block; width: 100%; height: auto; }
+.map-border { fill: none; stroke: var(--muted); stroke-width: 1.1; stroke-linejoin: round; opacity: .55; }
+.map-st { cursor: pointer; }
+.map-st circle { stroke: var(--surface); stroke-width: 2; }
+.map-st.sel circle.ring { fill: none; stroke: var(--ink); stroke-width: 1.6; }
+.map-label { font-family: var(--font-data); font-weight: 600; fill: var(--ink); paint-order: stroke; stroke: var(--surface); stroke-width: 3.5px; stroke-linejoin: round; }
+.map-label.sel { fill: var(--accent); }
+.legend { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.legend .bar { height: 8px; flex: 1 1 120px; max-width: 280px; border-radius: 4px; }
+.map-tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12.5px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -130%); }
+
+/* Tabuľka */
+.tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.search { flex: 1 1 220px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunken); }
+.table-scroll { overflow: auto; max-height: min(640px, 75vh); margin-inline: -4px; border-bottom: 1px solid var(--line); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 7px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+th { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: inset 0 -1px 0 var(--line); }
+th button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+th button:focus-visible { outline: 2px solid var(--accent); }
+th[aria-sort] { color: var(--ink); }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--sunken); }
+tbody tr.sel { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+tbody tr.stale td { opacity: .55; }
+td.name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+td.name .idx { font-size: 12px; color: var(--muted); margin-left: 6px; }
+.tag { font-size: 11px; margin-left: 6px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.tag.wu { border-color: color-mix(in srgb, var(--c-gust) 55%, var(--line)); color: var(--c-gust); }
+.tag.own { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tag.warn { border-color: color-mix(in srgb, var(--warn) 60%, var(--line)); color: var(--warn); }
+.map-tools .btn { padding: 4px 10px; font-size: 13px; }
+.map-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+.toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ink); }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.sym { display: inline-flex; align-items: center; gap: 5px; }
+.sym svg { width: 12px; height: 12px; }
+.map-st .wu-mark { stroke: var(--ink); stroke-width: 1.2; }
+.map-st.suspect .wu-mark { fill: var(--surface); stroke: var(--muted); stroke-dasharray: 2 2; }
+.qc-box { margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13.5px; border: 1px solid color-mix(in srgb, var(--warn) 50%, var(--line)); background: color-mix(in srgb, var(--warn) 9%, var(--surface)); }
+.qc-box ul { margin: 4px 0 0; padding-left: 18px; }
+/* Weather Underground */
+.wu-status { margin: 0; font-size: 14px; }
+.wu-status.bad { color: var(--bad); }
+.wu-panel details { margin-top: 10px; }
+.wu-panel summary { cursor: pointer; font-weight: 600; color: var(--accent); width: max-content; max-width: 100%; }
+.wu-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin-top: 12px; max-width: 760px; }
+@media (max-width: 640px) { .wu-form { grid-template-columns: minmax(0, 1fr); } }
+.wu-form label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; min-width: 0; }
+.wu-form input[type="text"], .wu-form input[type="password"] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--sunken); font-weight: 400; font-size: 14px; min-width: 0; }
+.wu-form small { font-weight: 400; font-size: 12px; }
+.wu-form .check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 400; font-size: 14px; }
+.wu-form .check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.wu-form .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; grid-column: 1 / -1; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.danger { border-color: color-mix(in srgb, var(--bad) 60%, var(--line)); color: var(--bad); }
+.form-msg { grid-column: 1 / -1; margin: 0; font-size: 13.5px; min-height: 1.2em; }
+.form-msg.bad { color: var(--bad); }
+.form-msg.ok { color: var(--ok); }
+.wu-note { font-size: 12.5px; color: var(--muted); margin: 12px 0 0; max-width: 760px; }
+.chip { display: inline-block; min-width: 54px; padding: 1px 6px; border-radius: 5px; text-align: right; font-weight: 500; }
+.dir { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; color: var(--muted); }
+.table-note { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+
+/* Detail stanice */
+.detail-col { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+@media (max-width: 1020px) { .detail-col { position: static; } }
+.st-name { font-family: var(--font-display); font-stretch: 80%; font-weight: 800; font-size: 28px; line-height: 1.05; margin: 0; text-wrap: balance; }
+.st-meta { margin: 6px 0 0; font-size: 13.5px; color: var(--muted); }
+.hero { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 22px; margin: 14px 0 6px; }
+.big-t { font-family: var(--font-display); font-stretch: 70%; font-weight: 700; font-size: clamp(64px, 9vw, 88px); line-height: .9; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.big-t sup { font-size: .38em; font-weight: 600; vertical-align: .95em; margin-left: 2px; color: var(--muted); }
+.hero-side { display: grid; gap: 3px; padding-bottom: 6px; font-size: 14px; }
+.wx { font-weight: 600; }
+.trend.up { color: var(--c-temp); }
+.trend.down { color: var(--c-dew); }
+.readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-top: 12px; }
+@media (max-width: 460px) { .readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ro { background: var(--surface); padding: 9px 11px; min-width: 0; }
+.ro .v { font-family: var(--font-data); font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ro .v small { font-size: 12.5px; color: var(--muted); font-weight: 400; }
+.ro .label { font-size: 10.5px; }
+.ro .hint { font-size: 11.5px; color: var(--muted); }
+.soil { margin-top: 12px; display: grid; gap: 6px; }
+.soil-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 62px; align-items: center; gap: 10px; font-size: 13px; }
+.soil-row .track { height: 6px; background: var(--sunken); border-radius: 3px; position: relative; }
+.soil-row .fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px; }
+
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 8px; background: var(--sunken); border: 1px solid var(--line); margin-top: 16px; }
+.seg button { border: 0; background: transparent; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13.5px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .12); font-weight: 600; }
+.chart { position: relative; margin-top: 10px; }
+.chart svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.chart .axis text { font-family: var(--font-data); font-size: 11px; fill: var(--muted); }
+.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+.chart .cursor { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart-tip { min-height: 22px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.chart-tip .sw { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.chart-note { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
+.empty { padding: 28px 8px; text-align: center; color: var(--muted); }
+
+/* Predpoveď */
+.fc-head-seg { margin-top: 0; }
+.fc-run { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.fc-map { position: relative; }
+.fc-map canvas { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.fc-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 12px; }
+.fc-controls input[type="range"] { flex: 1 1 220px; min-width: 0; accent-color: var(--accent); }
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+.btn:hover { border-color: var(--accent); }
+.btn svg { width: 12px; height: 12px; }
+.fc-time { display: grid; min-width: 160px; }
+.fc-time b { font-family: var(--font-display); font-stretch: 85%; font-weight: 700; font-size: 19px; line-height: 1.2; }
+.fc-time span { font-size: 12.5px; color: var(--muted); }
+.fc-legend { margin-top: 10px; }
+.fc-legend svg { display: block; width: min(100%, 420px); height: auto; }
+.fc-legend text { font-family: var(--font-data); font-size: 11px; fill: var(--muted); }
+.fc-station { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.fc-station .chart text { font-family: var(--font-data); font-size: 11px; fill: var(--muted); }
+
+footer { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: space-between; }
+footer a { color: inherit; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .map-st circle { transition: r .15s; }
+  .extreme, tbody tr { transition: background-color .12s, border-color .12s; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Počasie na Slovensku</h1>
+      <p class="subtitle">Merania automatických meteorologických staníc SHMÚ, obnovované každých 5 minút</p>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite">
+      <span class="dot" id="statusDot"></span><span id="statusText">Pripájam sa k serveru…</span>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+
+  <section class="extremes" id="extremes" aria-label="Extrémy z posledného merania"></section>
+
+  <div class="main">
+    <div class="col">
+      <section class="panel" aria-labelledby="mapTitle">
+        <div class="panel-head">
+          <h2 id="mapTitle">Teplota vzduchu na staniciach</h2>
+          <span class="muted" id="mapCaption" style="font-size:13px"></span>
+        </div>
+        <div class="map-box" id="mapBox"></div>
+        <div class="legend"><span class="num">−20 °C</span><span class="bar" id="legendBar"></span><span class="num">40 °C</span></div>
+        <div class="map-tools" id="mapTools" hidden>
+          <span class="sym"><svg viewBox="-6 -6 12 12" aria-hidden="true"><circle r="5" fill="currentColor"/></svg>SHMÚ</span>
+          <span class="sym"><svg viewBox="-6 -6 12 12" aria-hidden="true"><rect x="-3.6" y="-3.6" width="7.2" height="7.2" transform="rotate(45)" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>amatérske (Weather Underground)</span>
+          <label class="toggle"><input type="checkbox" id="wuToggle"> Zobraziť amatérske stanice</label>
+          <button type="button" class="btn" id="mapZoom" hidden aria-pressed="false">Priblížiť okolie mojej stanice</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="tableTitle">
+        <div class="panel-head">
+          <h2 id="tableTitle">Všetky stanice</h2>
+          <div class="tools">
+            <input id="search" class="search" type="search" placeholder="Hľadať stanicu alebo index" aria-label="Hľadať stanicu" autocomplete="off">
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr id="thead"></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <p class="table-note" id="tableNote"></p>
+      </section>
+    </div>
+
+    <div class="col detail-col">
+      <section class="panel" id="detail" aria-live="polite">
+        <div class="empty">Sťahujem prvé merania zo servera SHMÚ…</div>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel wu-panel" id="wuPanel" aria-labelledby="wuTitle">
+    <div class="panel-head">
+      <h2 id="wuTitle">Moja stanica na Weather Underground</h2>
+      <span class="muted" id="wuSummary" style="font-size:13px"></span>
+    </div>
+    <p class="wu-status" id="wuStatus">Načítavam…</p>
+    <details id="wuDetails">
+      <summary id="wuSummaryToggle">Nastaviť pripojenie</summary>
+      <form id="wuForm" class="wu-form" autocomplete="off" novalidate>
+        <label for="wuKey">Kľúč k API
+          <input id="wuKey" name="kluc" type="password" spellcheck="false" autocomplete="off" placeholder="32 znakov">
+          <small>Nájdete ho po prihlásení na wunderground.com/member/api-keys.</small>
+        </label>
+        <label for="wuStation">ID mojej stanice
+          <input id="wuStation" name="stanica" type="text" spellcheck="false" placeholder="napr. IBRATI123">
+          <small>Je v nastaveniach stanice na Weather Underground (My Devices).</small>
+        </label>
+        <label for="wuOthers">Ďalšie stanice (nepovinné)
+          <input id="wuOthers" name="dalsie" type="text" spellcheck="false" placeholder="ID oddelené čiarkou">
+          <small>Najviac 20 staníc.</small>
+        </label>
+        <label class="check" for="wuNear"><input id="wuNear" name="okolie" type="checkbox" checked> Pridať aj až 10 staníc v okolí mojej</label>
+        <div class="actions">
+          <button type="submit" class="btn primary" id="wuSave">Uložiť a pripojiť</button>
+          <button type="button" class="btn danger" id="wuRemove" hidden>Odpojiť</button>
+        </div>
+        <p class="form-msg" id="wuMsg" role="status"></p>
+      </form>
+      <p class="wu-note">Kľúč sa uloží len do súboru wunderground.json v priečinku stránky na tomto počítači a do prehliadača sa už neposiela. Kľúč má limit 1 500 volaní denne; stránka si ich rozvrhne sama. Ak ten istý kľúč používa aj iná aplikácia, limit sa delí.</p>
+    </details>
+  </section>
+
+  <section class="panel" id="forecast" aria-labelledby="fcTitle">
+    <div class="panel-head">
+      <div>
+        <h2 id="fcTitle">Predpoveď modelu ALADIN</h2>
+        <p class="fc-run" id="fcRun">Načítavam predpoveď…</p>
+      </div>
+      <div class="seg fc-head-seg" id="fcFields" role="group" aria-label="Zobrazená veličina"></div>
+    </div>
+    <div class="fc-map" id="fcMap"><canvas id="fcCanvas" role="img" aria-label="Mapa predpovede"></canvas></div>
+    <div class="fc-controls">
+      <button type="button" class="btn" id="fcPlay" aria-pressed="false"></button>
+      <input type="range" id="fcSlider" min="0" max="0" value="0" step="1" aria-label="Čas predpovede">
+      <div class="fc-time"><b id="fcTime">—</b><span id="fcLead"></span></div>
+    </div>
+    <div class="fc-legend" id="fcLegend"></div>
+    <p class="chart-note" id="fcNote"></p>
+  </section>
+
+  <footer>
+    <span>Zdroj dát: Slovenský hydrometeorologický ústav, <a href="https://opendata.shmu.sk/" target="_blank" rel="noopener">opendata.shmu.sk</a>. Hranice: Natural Earth.</span>
+    <span id="wuCredit" hidden>Amatérske stanice: <a href="https://www.wunderground.com/" target="_blank" rel="noopener">Weather Underground</a>.</span>
+    <span>Časy sú uvedené v miestnom čase prehliadača.</span>
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* Režim: "static" = stránka na GitHub Pages (dáta pripravuje generuj.py), inak lokálny server.py */
+const STATIC_MODE = document.documentElement.dataset.mode === "static";
+const minuteTag = () => Math.floor(Date.now() / 60000);
+const URLS = STATIC_MODE ? {
+  current: () => `data/aktualne.json?t=${minuteTag()}`,
+  station: (id) => `data/stanice/${encodeURIComponent(id)}.json?t=${(state.data && state.data.generovane) || minuteTag()}`,
+  forecast: () => `data/predpoved.json?t=${Math.floor(Date.now() / 600000)}`,
+  field: (name) => `data/predpoved-${name}.json?t=${(fc.meta && fc.meta.beh) || 0}`,
+  points: () => `data/predpoved-body.json?t=${(fc.meta && fc.meta.beh) || 0}-${(state.data && state.data.generovane) || 0}`,
+} : {
+  current: () => "/api/current",
+  station: (id) => `/api/station/${id}`,
+  forecast: () => "/api/forecast",
+  field: (name) => `/api/forecast/pole/${name}`,
+  point: (s) => `/api/forecast/bod?lat=${s.lat}&lon=${s.lon}`,
+};
+
+/* ---------- Pomocné funkcie ---------- */
+const $ = (s) => document.querySelector(s);
+const NS = "http://www.w3.org/2000/svg";
+const LOCALE = "sk-SK";
+
+function fmt(v, d = 1) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return "—";
+  return v.toLocaleString(LOCALE, { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function hhmm(ts) {
+  return new Date(ts * 1000).toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
+}
+function dayTime(ts) {
+  const d = new Date(ts * 1000), now = new Date();
+  const same = d.toDateString() === now.toDateString();
+  return same ? hhmm(ts) : d.toLocaleString(LOCALE, { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function ago(ts) {
+  const m = Math.round((Date.now() / 1000 - ts) / 60);
+  if (m < 1) return "práve teraz";
+  if (m < 60) return `pred ${m} min`;
+  const h = Math.floor(m / 60);
+  return `pred ${h} h ${m % 60} min`;
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function el(tag, attrs = {}, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* bez úložiska */ } },
+};
+
+/* Teplotná stupnica pre mapu a tabuľku */
+const T_STOPS = [
+  [-20, [94, 60, 153]], [-10, [44, 111, 187]], [0, [111, 183, 214]], [8, [127, 191, 123]],
+  [16, [227, 192, 75]], [24, [232, 131, 58]], [32, [200, 50, 58]], [40, [126, 30, 60]],
+];
+function tColor(t) {
+  if (t === null || t === undefined) return null;
+  if (t <= T_STOPS[0][0]) return T_STOPS[0][1];
+  for (let i = 1; i < T_STOPS.length; i++) {
+    const [b, cb] = T_STOPS[i], [a, ca] = T_STOPS[i - 1];
+    if (t <= b) { const k = (t - a) / (b - a); return ca.map((x, j) => Math.round(x + (cb[j] - x) * k)); }
+  }
+  return T_STOPS[T_STOPS.length - 1][1];
+}
+const rgb = (c) => `rgb(${c.join(",")})`;
+const inkOn = (c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 > 0.55 ? "#13202a" : "#ffffff";
+$("#legendBar").style.background = `linear-gradient(90deg, ${T_STOPS.map(([t, c]) => `${rgb(c)} ${((t + 20) / 60) * 100}%`).join(", ")})`;
+
+/* Smer vetra (odkiaľ fúka) */
+const DIRS = ["S", "SV", "V", "JV", "J", "JZ", "Z", "SZ"];
+const dirName = (deg) => deg === null || deg === undefined ? "—" : DIRS[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
+function arrowSvg(deg, size = 14) {
+  if (deg === null || deg === undefined) return "";
+  // šípka ukazuje, kam vietor fúka (smer + 180°)
+  return `<svg class="dir" width="${size}" height="${size}" viewBox="-8 -8 16 16" aria-hidden="true"><g transform="rotate(${(deg + 180) % 360})"><path d="M0 -7 L4.5 4 L0 1.8 L-4.5 4 Z" fill="currentColor"/></g></svg>`;
+}
+
+/* Stav počasia z automatickej stanice: kódová tabuľka WMO 4680 */
+const WAWA = {
+  0: "Bez význačných javov", 1: "Oblačnosť sa rozpúšťa", 2: "Oblačnosť bez zmeny", 3: "Oblačnosť sa vytvára",
+  4: "Zákal alebo dym, dohľadnosť od 1 km", 5: "Zákal alebo dym, dohľadnosť pod 1 km",
+  10: "Dymno", 11: "Ľadové ihličky", 12: "Vzdialené blýskanie", 18: "Húlava",
+  20: "Hmla v poslednej hodine", 21: "Zrážky v poslednej hodine", 22: "Mrholenie alebo snehové zrná v poslednej hodine",
+  23: "Dážď v poslednej hodine", 24: "Sneženie v poslednej hodine", 25: "Mrznúce mrholenie alebo dážď v poslednej hodine",
+  26: "Búrka v poslednej hodine", 27: "Zvírený sneh alebo piesok", 28: "Zvírený sneh alebo piesok, dohľadnosť od 1 km",
+  29: "Zvírený sneh alebo piesok, dohľadnosť pod 1 km",
+  30: "Hmla", 31: "Hmla miestami", 32: "Hmla, rednúca", 33: "Hmla bez zmeny", 34: "Hmla, hustnúca", 35: "Hmla s námrazou",
+  40: "Zrážky", 41: "Slabé alebo mierne zrážky", 42: "Silné zrážky", 43: "Slabé alebo mierne kvapalné zrážky",
+  44: "Silné kvapalné zrážky", 45: "Slabé alebo mierne tuhé zrážky", 46: "Silné tuhé zrážky",
+  47: "Slabé alebo mierne mrznúce zrážky", 48: "Silné mrznúce zrážky",
+  50: "Mrholenie", 51: "Slabé mrholenie", 52: "Mierne mrholenie", 53: "Silné mrholenie", 54: "Slabé mrznúce mrholenie",
+  55: "Mierne mrznúce mrholenie", 56: "Silné mrznúce mrholenie", 57: "Slabé mrholenie s dažďom", 58: "Mrholenie s dažďom",
+  60: "Dážď", 61: "Slabý dážď", 62: "Mierny dážď", 63: "Silný dážď", 64: "Slabý mrznúci dážď", 65: "Mierny mrznúci dážď",
+  66: "Silný mrznúci dážď", 67: "Slabý dážď so snehom", 68: "Dážď so snehom",
+  70: "Sneženie", 71: "Slabé sneženie", 72: "Mierne sneženie", 73: "Silné sneženie", 74: "Slabé ľadové zrná",
+  75: "Mierne ľadové zrná", 76: "Silné ľadové zrná", 77: "Snehové zrná", 78: "Ľadové ihličky",
+  80: "Prehánky", 81: "Slabé dažďové prehánky", 82: "Mierne dažďové prehánky", 83: "Silné dažďové prehánky",
+  84: "Veľmi silné dažďové prehánky", 85: "Slabé snehové prehánky", 86: "Mierne snehové prehánky", 87: "Silné snehové prehánky",
+  89: "Krupobitie", 90: "Búrka", 91: "Búrka bez zrážok", 92: "Búrka s prehánkami", 93: "Búrka s krupobitím",
+  94: "Silná búrka bez zrážok", 95: "Silná búrka s prehánkami", 96: "Silná búrka s krupobitím", 99: "Tornádo",
+};
+const wx = (code) => code === null || code === undefined ? null : (WAWA[Math.round(code)] || `Kód počasia ${Math.round(code)}`);
+
+function dewPoint(t, rh) {
+  if (t === null || t === undefined || !rh) return null;
+  const a = 17.62, b = 243.12, g = Math.log(rh / 100) + (a * t) / (b + t);
+  return (b * g) / (a - g);
+}
+const stName = (s) => s.nazov || `Stanica č. ${s.id}`;
+function visibility(m) {
+  if (m === null || m === undefined) return ["—", ""];
+  if (m < 1000) return [fmt(m, 0), "m"];
+  return [fmt(m / 1000, m < 10000 ? 1 : 0), "km"];
+}
+
+/* ---------- Stav aplikácie ---------- */
+const state = {
+  data: null,
+  selected: null,
+  sort: store.get("pocasie.sort") || "nazov",
+  dir: Number(store.get("pocasie.dir")) || 1,
+  query: "",
+  chart: store.get("pocasie.graf") || "t",
+  stationData: null,
+  stationFor: null,
+  stationCas: null,
+  showWu: store.get("pocasie.wu") !== "0",
+  mapZoom: store.get("pocasie.zoom") === "1",
+};
+const isWu = (s) => s && s.zdroj === "wu";
+function amateurs() { return (state.data && state.data.amaterske) || []; }
+function allStations() { return [...state.data.stanice, ...(state.showWu ? amateurs() : [])]; }
+function findStation(id) { return state.data.stanice.find((x) => x.id === id) || amateurs().find((x) => x.id === id); }
+const parseId = (x) => (/^\d+$/.test(x) ? Number(x) : x);
+
+/* ---------- Načítanie dát ---------- */
+async function getJSON(url) {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+let lastMeasurement = null;
+async function refresh() {
+  try {
+    const data = await getJSON(URLS.current());
+    state.data = data;
+    if (!state.selected || !findStation(state.selected)) pickDefault();
+    renderAll();
+    const changed = data.najnovsieMeranie !== lastMeasurement;
+    lastMeasurement = data.najnovsieMeranie;
+    const sel = findStation(state.selected);
+    const selChanged = sel && sel.cas !== state.stationCas;
+    if (state.selected && (changed || selChanged || state.stationFor !== state.selected)) loadStation(state.selected);
+  } catch (err) {
+    setStatus("bad", "Server stránky neodpovedá. Beží ešte program server.py?");
+  }
+}
+
+function pickDefault() {
+  const fromHash = parseId(decodeURIComponent(location.hash.slice(1)));
+  const remembered = parseId(store.get("pocasie.stanica") || "");
+  const own = amateurs().find((s) => s.vlastna)?.id;
+  state.selected = [fromHash, remembered, own, 11813, 11816].find((id) => id !== "" && id !== undefined && findStation(id)) ?? state.data.stanice[0]?.id ?? null;
+}
+
+async function loadStation(id) {
+  try {
+    const d = await getJSON(URLS.station(id));
+    if (id !== state.selected) return;
+    state.stationData = d;
+    state.stationFor = id;
+    state.stationCas = findStation(id)?.cas ?? null;
+    renderDetail();
+  } catch { /* detail sa doplní pri ďalšom obnovení */ }
+}
+
+function select(id, scroll = false) {
+  if (state.selected === id) return;
+  state.selected = id;
+  store.set("pocasie.stanica", String(id));
+  history.replaceState(null, "", `#${id}`);
+  state.stationData = null;
+  renderAll();
+  loadStation(id);
+  if (scroll && window.matchMedia("(max-width: 1020px)").matches) $("#detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* ---------- Vykreslenie ---------- */
+function setStatus(kind, text) {
+  $("#statusDot").className = `dot ${kind}`;
+  $("#statusText").textContent = text;
+}
+
+function renderAll() {
+  renderStatus();
+  renderExtremes();
+  renderMap();
+  renderTable();
+  renderDetail();
+  renderWuPanel();
+}
+
+function renderStatus() {
+  const d = state.data, st = d.stav || {}, banner = $("#banner");
+  const newest = d.najnovsieMeranie;
+  banner.hidden = true;
+  if (!newest) {
+    if (st.stav === "chyba") {
+      setStatus("bad", "Dáta sa nepodarilo stiahnuť");
+      banner.hidden = false; banner.className = "banner bad";
+      banner.textContent = `Server SHMÚ je nedostupný alebo vrátil chybu: ${st.chyba}. Ďalší pokus o minútu.`;
+    } else setStatus("warn", "Sťahujem prvé merania…");
+    return;
+  }
+  const ageMin = (Date.now() / 1000 - newest) / 60;
+  const lateMin = STATIC_MODE ? 45 : 20;
+  let text = `Meranie ${hhmm(newest)} · ${ago(newest)}`;
+  const h = st.historia || {};
+  if (st.stav === "historia" && h.spolu) text += ` · história ${h.hotovo}/${h.spolu}`;
+  if (STATIC_MODE && d.generovane) text += ` · aktualizované ${hhmm(d.generovane)}`;
+  setStatus(ageMin > lateMin || st.stav === "chyba" ? "warn" : "ok", text);
+  if (st.stav === "chyba") {
+    banner.hidden = false; banner.className = "banner";
+    banner.textContent = `Posledná kontrola nových dát zlyhala (${st.chyba}). Zobrazujem posledné stiahnuté merania.`;
+  } else if (ageMin > lateMin) {
+    banner.hidden = false; banner.className = "banner";
+    banner.textContent = STATIC_MODE
+      ? `Najnovšie merania sú staré ${Math.round(ageMin)} minút. GitHub zrejme mešká so spustením aktualizácie, prípadne SHMÚ s publikovaním.`
+      : `Najnovšie merania sú staré ${Math.round(ageMin)} minút. SHMÚ zrejme meškajú s publikovaním.`;
+  }
+}
+
+function isStale(s) {
+  if (isWu(s)) return s.offline || Date.now() / 1000 - s.cas > 3600;
+  return state.data.najnovsieMeranie - s.cas > 3600;
+}
+const isSuspect = (s) => isWu(s) && s.kvalita && s.kvalita.upozornenia && s.kvalita.upozornenia.length > 0;
+function freshStations() {
+  return state.data.stanice.filter((s) => !isStale(s));
+}
+
+function renderExtremes() {
+  const list = freshStations();
+  const best = (fn, cmp) => list.reduce((acc, s) => {
+    const v = fn(s);
+    if (v === null || v === undefined) return acc;
+    return !acc || cmp(v, acc.v) ? { s, v } : acc;
+  }, null);
+  const items = [
+    ["Najteplejšie", best((s) => s.hodnoty.t, (a, b) => a > b), (v) => fmt(v), "°C"],
+    ["Najchladnejšie", best((s) => s.hodnoty.t, (a, b) => a < b), (v) => fmt(v), "°C"],
+    ["Najsilnejší náraz vetra", best((s) => s.hodnoty.vie_max_rych, (a, b) => a > b), (v) => fmt(v), "m/s"],
+    ["Najviac zrážok za hodinu", best((s) => s.zrazky1h ? s.zrazky1h.mm : null, (a, b) => a > b), (v) => fmt(v), "mm"],
+  ];
+  const box = $("#extremes");
+  box.innerHTML = "";
+  for (const [label, hit, f, unit] of items) {
+    const b = document.createElement("button");
+    b.className = "extreme";
+    b.type = "button";
+    if (hit && unit === "mm" && hit.v <= 0) {
+      b.disabled = true;
+      b.innerHTML = `<span class="label">${label}</span><span class="val">0<small>mm</small></span><span class="where">za poslednú hodinu nikde nepršalo</span>`;
+    } else if (hit) {
+      b.innerHTML = `<span class="label">${label}</span><span class="val">${f(hit.v)}<small>${unit}</small></span><span class="where">${esc(stName(hit.s))}</span>`;
+      b.addEventListener("click", () => select(hit.s.id, true));
+      b.title = `Zobraziť stanicu ${stName(hit.s)}`;
+    } else {
+      b.disabled = true;
+      b.innerHTML = `<span class="label">${label}</span><span class="val">—</span><span class="where">zatiaľ bez údajov</span>`;
+    }
+    box.append(b);
+  }
+}
+
+/* Mapa */
+let borders = null;
+fetch("hranice.json").then((r) => r.json()).then((d) => { borders = d.ciary; if (state.data) renderMap(); }).catch(() => {});
+const MAP = { lon0: 16.75, lon1: 22.65, lat0: 47.66, lat1: 49.66, w: 720 };
+MAP.kx = Math.cos((48.7 * Math.PI) / 180);
+MAP.scale = MAP.w / ((MAP.lon1 - MAP.lon0) * MAP.kx);
+MAP.h = Math.round((MAP.lat1 - MAP.lat0) * MAP.scale);
+const proj = (lon, lat) => [(lon - MAP.lon0) * MAP.kx * MAP.scale, (MAP.lat1 - lat) * MAP.scale];
+
+function renderMap() {
+  if (!state.data) return;
+  const box = $("#mapBox");
+  const own = amateurs().find((x) => x.vlastna);
+  const zoomed = !!(state.mapZoom && own && state.showWu && own.lat);
+  const Z = 7;
+  const view = zoomed
+    ? { lon0: own.lon - (MAP.lon1 - MAP.lon0) / Z / 2, lat1: own.lat + (MAP.lat1 - MAP.lat0) / Z / 2, scale: MAP.scale * Z }
+    : { lon0: MAP.lon0, lat1: MAP.lat1, scale: MAP.scale };
+  const P = (lon, lat) => [(lon - view.lon0) * MAP.kx * view.scale, (view.lat1 - lat) * view.scale];
+  const svg = el("svg", { viewBox: `0 0 ${MAP.w} ${MAP.h}`, role: "img", "aria-label": "Mapa Slovenska s teplotou na staniciach" });
+  const defs = el("defs");
+  const clip = el("clipPath", { id: "mapClip" });
+  clip.append(el("rect", { x: 0, y: 0, width: MAP.w, height: MAP.h }));
+  defs.append(clip);
+  svg.append(defs);
+  const g = el("g", { "clip-path": "url(#mapClip)" });
+  if (borders) {
+    for (const line of borders) {
+      g.append(el("polyline", { class: "map-border", points: line.map(([lon, lat]) => P(lon, lat).map((v) => v.toFixed(1)).join(",")).join(" ") }));
+    }
+  }
+  svg.append(g);
+
+  const located = allStations().filter((s) => {
+    if (!s.lat || !s.lon || isStale(s)) return false;
+    const [x, y] = P(s.lon, s.lat);
+    return x > -10 && x < MAP.w + 10 && y > -10 && y < MAP.h + 10;
+  });
+  const k = Math.min(1.9, Math.max(1, (MAP.w / (box.clientWidth || MAP.w)) * 0.75));
+  const fs = 12 * k, rr = 6 * k;
+  // vybraná stanica sa kreslí ako posledná; popisy dostane najprv ona, potom synoptické stanice
+  located.sort((a, b) => (a.id === state.selected) - (b.id === state.selected));
+  const placed = [];
+  const rank = (s) => (s.id === state.selected ? 0 : isWu(s) ? (s.vlastna ? 1 : isSuspect(s) ? 9 : 3) : s.vyska ? 1 : 2);
+  const order = [...located].sort((a, b) => rank(a) - rank(b));
+  const labels = new Map();
+  // najprv obsadíme miesto všetkými bodkami, aby na ne žiadny popis nezasahoval
+  for (const s of located) {
+    const [x, y] = P(s.lon, s.lat);
+    const pad = s.id === state.selected ? rr * 1.9 : rr;
+    placed.push({ x: x - pad - 1, y: y - pad - 1, w: 2 * pad + 2, h: 2 * pad + 2 });
+  }
+  for (const s of order) {
+    if (s.hodnoty.t === undefined || isSuspect(s)) continue;
+    const [x, y] = P(s.lon, s.lat);
+    const txt = `${fmt(s.hodnoty.t)}°`;
+    const w = txt.length * fs * 0.62, h = fs + 2;
+    const candidates = [[x + rr + 3, y + fs * 0.35], [x - rr - 3 - w, y + fs * 0.35], [x - w / 2, y - rr - 3], [x - w / 2, y + rr + fs + 1]];
+    for (const [lx, ly] of candidates) {
+      const r = { x: lx, y: ly - h + 3, w, h };
+      const hit = placed.some((p) => r.x < p.x + p.w && r.x + r.w > p.x && r.y < p.y + p.h && r.y + r.h > p.y);
+      if (!hit && lx > 0 && lx + w < MAP.w && r.y > 0 && ly < MAP.h) { placed.push(r); labels.set(s.id, [lx, ly, txt]); break; }
+    }
+  }
+  const labelLayer = el("g", { "aria-hidden": "true", style: "pointer-events:none" });
+  for (const s of located) {
+    const [x, y] = P(s.lon, s.lat);
+    const c = tColor(s.hodnoty.t) || [150, 150, 150];
+    const grp = el("g", { class: `map-st${s.id === state.selected ? " sel" : ""}${isSuspect(s) ? " suspect" : ""}`, tabindex: 0, role: "button",
+      "aria-label": `${stName(s)}${isWu(s) ? " (amatérska)" : ""}: ${fmt(s.hodnoty.t)} °C` });
+    if (s.id === state.selected) grp.append(el("circle", { class: "ring", cx: x, cy: y, r: rr * 1.9 }));
+    if (isWu(s)) {
+      const half = (s.vlastna || s.id === state.selected ? 1.05 : 0.8) * rr;
+      if (s.vlastna && s.id !== state.selected) grp.append(el("circle", { class: "ring", cx: x, cy: y, r: rr * 1.7 }));
+      grp.append(el("rect", { class: "wu-mark", x: x - half, y: y - half, width: 2 * half, height: 2 * half, transform: `rotate(45 ${x} ${y})`, fill: rgb(c) }));
+    } else {
+      grp.append(el("circle", { cx: x, cy: y, r: s.id === state.selected ? rr * 1.25 : rr, fill: rgb(c) }));
+    }
+    const lab = labels.get(s.id);
+    if (lab) labelLayer.append(el("text", { class: `map-label${s.id === state.selected ? " sel" : ""}`, x: lab[0], y: lab[1], style: `font-size:${fs.toFixed(1)}px` }, lab[2]));
+    grp.addEventListener("click", () => select(s.id, true));
+    grp.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(s.id, true); } });
+    grp.addEventListener("pointerenter", () => showTip(s, x, y));
+    grp.addEventListener("pointerleave", hideTip);
+    svg.append(grp);
+  }
+  svg.append(labelLayer);
+  box.replaceChildren(svg);
+  const total = freshStations().length;
+  const shmuOnMap = located.filter((s) => !isWu(s)).length, wuOnMap = located.length - shmuOnMap;
+  $("#mapCaption").textContent = zoomed
+    ? `Okolie stanice ${own.nazov} · ${shmuOnMap} staníc SHMÚ · ${wuOnMap} amatérskych`
+    : `${shmuOnMap} staníc SHMÚ so známou polohou z ${total} meraných` + (wuOnMap ? ` · ${wuOnMap} amatérskych` : "");
+  $("#mapTools").hidden = amateurs().length === 0;
+  $("#wuToggle").checked = state.showWu;
+  const zb = $("#mapZoom");
+  zb.hidden = !(own && state.showWu);
+  zb.textContent = zoomed ? "Celé Slovensko" : "Priblížiť okolie mojej stanice";
+  zb.setAttribute("aria-pressed", String(zoomed));
+}
+let tipEl = null;
+function showTip(s, x, y) {
+  const box = $("#mapBox");
+  tipEl = tipEl || Object.assign(document.createElement("div"), { className: "map-tip" });
+  const sx = box.clientWidth / MAP.w;
+  tipEl.textContent = `${stName(s)}${isWu(s) ? " (WU)" : ""} · ${fmt(s.hodnoty.t)} °C${isSuspect(s) ? " · podozrivé" : ""}`;
+  tipEl.style.left = `${x * sx}px`;
+  tipEl.style.top = `${y * sx}px`;
+  box.append(tipEl);
+}
+function hideTip() { tipEl?.remove(); }
+
+/* Tabuľka */
+const COLS = [
+  { key: "nazov", label: "Stanica", get: (s) => s.nazov ? `0${s.nazov}` : `1${String(s.id).padStart(6, "0")}` },
+  { key: "t", label: "Teplota", get: (s) => s.hodnoty.t },
+  { key: "vlh", label: "Vlhkosť", get: (s) => s.hodnoty.vlh_rel },
+  { key: "vietor", label: "Vietor", get: (s) => s.hodnoty.vie_pr_rych },
+  { key: "naraz", label: "Nárazy", get: (s) => s.hodnoty.vie_max_rych },
+  { key: "zr", label: "Zrážky 1 h", get: (s) => s.zrazky1h ? s.zrazky1h.mm : null },
+  { key: "tlak", label: "Tlak", get: (s) => s.hodnoty.tlak },
+];
+function renderTable() {
+  const head = $("#thead");
+  head.innerHTML = "";
+  for (const c of COLS) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    if (state.sort === c.key) th.setAttribute("aria-sort", state.dir > 0 ? "ascending" : "descending");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = c.label + (state.sort === c.key ? (state.dir > 0 ? " ↑" : " ↓") : "");
+    b.addEventListener("click", () => {
+      if (state.sort === c.key) state.dir = -state.dir;
+      else { state.sort = c.key; state.dir = c.key === "nazov" ? 1 : -1; }
+      store.set("pocasie.sort", state.sort); store.set("pocasie.dir", String(state.dir));
+      renderTable();
+    });
+    th.append(b);
+    head.append(th);
+  }
+  const col = COLS.find((c) => c.key === state.sort) || COLS[0];
+  const q = state.query.trim().toLocaleLowerCase(LOCALE);
+  const rows = allStations()
+    .filter((s) => !q || stName(s).toLocaleLowerCase(LOCALE).includes(q) || String(s.wuId || s.id).toLocaleLowerCase(LOCALE).includes(q))
+    .sort((a, b) => {
+      const va = col.get(a), vb = col.get(b);
+      if (va === null || va === undefined) return 1;
+      if (vb === null || vb === undefined) return -1;
+      return (typeof va === "string" ? va.localeCompare(vb, LOCALE) : va - vb) * state.dir;
+    });
+  const body = $("#tbody");
+  const frag = document.createDocumentFragment();
+  for (const s of rows) {
+    const v = s.hodnoty, tr = document.createElement("tr");
+    tr.className = `${s.id === state.selected ? "sel" : ""} ${isStale(s) ? "stale" : ""}`;
+    tr.tabIndex = 0;
+    const c = tColor(v.t);
+    const tCell = c ? `<span class="chip num" style="background:${rgb(c)};color:${inkOn(c)}">${fmt(v.t)}</span>` : "—";
+    const rain = s.zrazky1h ? `${s.zrazky1h.pokrytie < 0.9 ? "≈" : ""}${fmt(s.zrazky1h.mm, 1)}` : "—";
+    tr.innerHTML = `
+      <td class="name">${esc(stName(s))}${isWu(s) ? `<span class="tag ${s.vlastna ? "own" : "wu"}">${s.vlastna ? "moja" : "WU"}</span>` : s.nazov ? `<span class="idx num">${s.id}</span>` : ""}${isSuspect(s) ? `<span class="tag warn">podozrivé</span>` : ""}${isStale(s) ? `<span class="tag">neaktuálne</span>` : ""}</td>
+      <td>${tCell}</td>
+      <td class="num">${v.vlh_rel === undefined ? "—" : fmt(v.vlh_rel, 0) + " %"}</td>
+      <td class="num">${arrowSvg(v.vie_pr_smer)} ${fmt(v.vie_pr_rych)}</td>
+      <td class="num">${fmt(v.vie_max_rych)}</td>
+      <td class="num">${rain}</td>
+      <td class="num"${isWu(s) ? ' title="Tlak udávaný stanicou, väčšinou prepočítaný na hladinu mora"' : ""}>${fmt(v.tlak)}${isWu(s) && v.tlak !== undefined ? "*" : ""}</td>`;
+    tr.addEventListener("click", () => select(s.id, true));
+    tr.addEventListener("keydown", (e) => { if (e.key === "Enter") select(s.id, true); });
+    frag.append(tr);
+  }
+  body.replaceChildren(frag);
+  const unnamed = state.data.stanice.filter((s) => !s.nazov).length;
+  const nWu = state.showWu ? amateurs().length : 0;
+  $("#tableNote").textContent = `Zobrazených ${rows.length} z ${state.data.stanice.length + nWu} staníc. Vietor v m/s, tlak v hPa v nadmorskej výške stanice.` +
+    (nWu ? " Pri amatérskych staniciach (WU) je tlak väčšinou prepočítaný na hladinu mora (*)." : "") +
+    (unnamed ? ` Pre ${unnamed} ${unnamed === 1 ? "stanicu" : unnamed < 5 ? "stanice" : "staníc"} zatiaľ nepoznáme názov; doplniť ho možno v súbore stanice.json alebo skriptom aktualizovat_stanice.py.` : "");
+}
+$("#search").addEventListener("input", (e) => { state.query = e.target.value; renderTable(); });
+
+/* Detail stanice */
+const CHARTS = {
+  t: { label: "Teplota", unit: "°C" },
+  vietor: { label: "Vietor", unit: "m/s" },
+  zrazky: { label: "Zrážky", unit: "mm" },
+  tlak: { label: "Tlak", unit: "hPa" },
+  vlh: { label: "Vlhkosť", unit: "%" },
+};
+
+function renderDetail() {
+  const box = $("#detail");
+  if (!state.data || !state.selected) return;
+  const s = findStation(state.selected);
+  if (!s) return;
+  const v = s.hodnoty;
+  const wuSt = isWu(s);
+  const dp = wuSt && v.rosny !== undefined ? v.rosny : dewPoint(v.t, v.vlh_rel);
+  const trend = s.zmenaTeploty1h;
+  const trendHtml = trend === null || trend === undefined ? "" :
+    `<span class="trend ${trend > 0.2 ? "up" : trend < -0.2 ? "down" : ""}">${trend > 0 ? "▲" : trend < 0 ? "▼" : "■"} ${fmt(Math.abs(trend))} °C za hodinu</span>`;
+  const weather = wx(v.stav_poc);
+  const [visV, visU] = visibility(v.dohl);
+  const rain = (r) => r ? `${fmt(r.mm, 1)}<small>mm</small>` : "—";
+  const rainHint = (r, span) => r && r.pokrytie < 0.9 ? `<span class="hint">z ${Math.round(r.pokrytie * 100)} % ${span}</span>` : "";
+  const ro = (label, value, hint = "") => `<div class="ro"><div class="label">${label}</div><div class="v">${value}</div>${hint}</div>`;
+
+  const since = s.historiaOd && Date.now() / 1000 - s.historiaOd < 82800 ? `od ${hhmm(s.historiaOd)}` : "24 h";
+  const cells = wuSt ? [
+    ro("Vlhkosť", v.vlh_rel === undefined ? "—" : `${fmt(v.vlh_rel, 0)}<small>%</small>`),
+    ro("Rosný bod", dp === null || dp === undefined ? "—" : `${fmt(dp)}<small>°C</small>`),
+    ro("Tlak", v.tlak === undefined ? "—" : `${fmt(v.tlak)}<small>hPa</small>`, `<span class="hint">udáva stanica</span>`),
+    ro("Vietor", v.vie_pr_rych === undefined ? "—" : `${arrowSvg(v.vie_pr_smer, 16)}${fmt(v.vie_pr_rych)}<small>m/s</small>`,
+      v.vie_pr_smer === undefined ? "" : `<span class="hint">od ${dirName(v.vie_pr_smer)} (${fmt(v.vie_pr_smer, 0)}°)</span>`),
+    ro("Nárazy", v.vie_max_rych === undefined ? "—" : `${fmt(v.vie_max_rych)}<small>m/s</small>`,
+      v.vie_max_rych === undefined ? "" : `<span class="hint">${fmt(v.vie_max_rych * 3.6, 0)} km/h</span>`),
+    ro("Zrážky 1 h", rain(s.zrazky1h), rainHint(s.zrazky1h, "hodiny")),
+    ro("Zrážky dnes", s.zrazkyDnes === null || s.zrazkyDnes === undefined ? "—" : `${fmt(s.zrazkyDnes, 1)}<small>mm</small>`, `<span class="hint">od polnoci</span>`),
+    ro("Intenzita zrážok", v.intenzita === undefined ? "—" : `${fmt(v.intenzita, 1)}<small>mm/h</small>`),
+    ro("Slnečné žiarenie", v.zglo === undefined ? "—" : `${fmt(v.zglo, 0)}<small>W/m²</small>`),
+    ro("Teplota min / max", s.tMin24 === null ? "—" : `${fmt(s.tMin24)} / ${fmt(s.tMax24)}`, `<span class="hint">${since}, °C</span>`),
+    ro("Rozdiel od SHMÚ", s.kvalita?.odchylkaOdShmu === null || s.kvalita?.odchylkaOdShmu === undefined ? "—" :
+      `${s.kvalita.odchylkaOdShmu > 0 ? "+" : ""}${fmt(s.kvalita.odchylkaOdShmu)}<small>°C</small>`,
+      s.kvalita?.shmuStanica ? `<span class="hint">${esc(s.kvalita.shmuStanica)}, ${fmt(s.kvalita.shmuVzdialenost, 0)} km</span>` : `<span class="hint">žiadna do 30 km</span>`),
+    ro("Rozdiel od modelu", s.kvalita?.odchylkaOdModelu === null || s.kvalita?.odchylkaOdModelu === undefined ? "—" :
+      `${s.kvalita.odchylkaOdModelu > 0 ? "+" : ""}${fmt(s.kvalita.odchylkaOdModelu)}<small>°C</small>`, `<span class="hint">oproti ALADIN-u</span>`),
+  ] : [
+    ro("Vlhkosť", v.vlh_rel === undefined ? "—" : `${fmt(v.vlh_rel, 0)}<small>%</small>`),
+    ro("Rosný bod", dp === null ? "—" : `${fmt(dp)}<small>°C</small>`, `<span class="hint">vypočítaný</span>`),
+    ro("Tlak na stanici", v.tlak === undefined ? "—" : `${fmt(v.tlak)}<small>hPa</small>`),
+    ro("Vietor", v.vie_pr_rych === undefined ? "—" : `${arrowSvg(v.vie_pr_smer, 16)}${fmt(v.vie_pr_rych)}<small>m/s</small>`,
+      v.vie_pr_smer === undefined ? "" : `<span class="hint">od ${dirName(v.vie_pr_smer)} (${fmt(v.vie_pr_smer, 0)}°)</span>`),
+    ro("Nárazy", v.vie_max_rych === undefined ? "—" : `${fmt(v.vie_max_rych)}<small>m/s</small>`,
+      v.vie_max_rych === undefined ? "" : `<span class="hint">${fmt(v.vie_max_rych * 3.6, 0)} km/h</span>`),
+    ro("Zrážky 1 h", rain(s.zrazky1h), rainHint(s.zrazky1h, "hodiny")),
+    ro("Zrážky 24 h", rain(s.zrazky24h), rainHint(s.zrazky24h, "dňa")),
+    ro("Dohľadnosť", v.dohl === undefined ? "—" : `${visV}<small>${visU}</small>`),
+    ro("Sneh", v.sneh_pokr === undefined ? "—" : `${fmt(v.sneh_pokr, 0)}<small>cm</small>`),
+    ro("Globálne žiarenie", v.zglo === undefined ? "—" : `${fmt(v.zglo, 0)}<small>W/m²</small>`),
+    ro("Prízemná teplota", v.tprz === undefined ? "—" : `${fmt(v.tprz)}<small>°C</small>`),
+    ro("Teplota 24 h", s.tMin24 === null ? "—" : `${fmt(s.tMin24)} / ${fmt(s.tMax24)}`, `<span class="hint">min / max °C</span>`),
+  ];
+
+  const soilEntries = Object.entries(s.poda || {});
+  let soilHtml = "";
+  if (soilEntries.length) {
+    const vals = soilEntries.map(([, t]) => t);
+    const lo = Math.min(0, ...vals) - 2, hi = Math.max(...vals) + 2;
+    soilHtml = `<div class="soil"><div class="label">Teplota pôdy v hĺbke</div>` + soilEntries.map(([d, t]) => {
+      const c = tColor(t);
+      return `<div class="soil-row"><span class="muted">${d} cm</span><span class="track"><span class="fill" style="width:${((t - lo) / (hi - lo)) * 100}%;background:${rgb(c)}"></span></span><span class="num" style="text-align:right">${fmt(t)} °C</span></div>`;
+    }).join("") + `</div>`;
+  }
+
+  const seg = Object.entries(CHARTS).map(([k, c]) => `<button type="button" data-k="${k}" aria-pressed="${state.chart === k}">${c.label}</button>`).join("");
+  const meta = wuSt ? [s.vlastna ? "moja stanica" : "amatérska stanica", `Weather Underground ${esc(s.wuId)}`] : [`index ${s.id}`];
+  if (s.vyska) meta.push(`${fmt(s.vyska, 0)} m n. m.`);
+  meta.push(isStale(s) ? `posledné meranie ${dayTime(s.cas)}` : `meranie ${hhmm(s.cas)}`);
+  const qcHtml = isSuspect(s) ? `<div class="qc-box"><b>Meranie môže byť chybné.</b><ul>${s.kvalita.upozornenia.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
+
+  box.innerHTML = `
+    <h2 class="st-name">${esc(stName(s))}</h2>
+    <p class="st-meta">${meta.join(" · ")}</p>
+    <div class="hero">
+      <div class="big-t">${fmt(v.t)}<sup>°C</sup></div>
+      <div class="hero-side">
+        ${weather ? `<span class="wx">${weather}</span>` : ""}
+        ${trendHtml}
+      </div>
+    </div>
+    ${qcHtml}
+    <div class="readouts">${cells.join("")}</div>
+    ${soilHtml}
+    <div class="seg" role="group" aria-label="Graf za posledných 24 hodín">${seg}</div>
+    <div class="chart-tip" id="chartTip"></div>
+    <div class="chart" id="chart"><div class="empty">Načítavam priebeh…</div></div>
+    <p class="chart-note" id="chartNote"></p>
+    <div class="fc-station" id="fcStation" hidden>
+      <div class="label">Predpoveď ALADIN pre túto stanicu</div>
+      <div class="chart-tip" id="fcChartTip"></div>
+      <div class="chart" id="fcChart"></div>
+      <p class="chart-note" id="fcChartNote"></p>
+    </div>`;
+  box.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
+    state.chart = b.dataset.k; store.set("pocasie.graf", state.chart); renderDetail();
+  }));
+  if (state.stationData && state.stationFor === s.id) renderChart();
+  renderStationForecast();
+}
+
+/* Graf */
+function niceStep(span, target) {
+  const raw = span / target, p = 10 ** Math.floor(Math.log10(raw)), n = raw / p;
+  return (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * p;
+}
+function renderChart() {
+  const d = state.stationData.rady, kind = state.chart, cfg = CHARTS[kind];
+  const times = d.cas;
+  const box = $("#chart"), tip = $("#chartTip"), note = $("#chartNote");
+  if (!times.length) { box.innerHTML = `<div class="empty">Zatiaľ bez priebehu.</div>`; return; }
+
+  const dew = d.t.map((t, i) => dewPoint(t, d.vlh[i]));
+  const series = {
+    t: [{ name: "Teplota", color: "var(--c-temp)", v: d.t }, { name: "Rosný bod", color: "var(--c-dew)", v: dew, dash: "5 4" }],
+    vietor: [{ name: "Priemerná rýchlosť", color: "var(--c-wind)", v: d.vietor }, { name: "Nárazy", color: "var(--c-gust)", v: d.naraz, dash: "5 4" }],
+    zrazky: [{ name: "Zrážky za 10 min", color: "var(--c-rain)", v: d.zrazky, bars: true }],
+    tlak: [{ name: "Tlak na stanici", color: "var(--c-press)", v: d.tlak }],
+    vlh: [{ name: "Relatívna vlhkosť", color: "var(--c-hum)", v: d.vlh }],
+  }[kind];
+
+  const all = series.flatMap((s) => s.v).filter((x) => x !== null && x !== undefined);
+  if (!all.length) {
+    box.innerHTML = `<div class="empty">Táto stanica ${cfg.label.toLowerCase()} nemeria.</div>`;
+    tip.innerHTML = ""; note.textContent = ""; return;
+  }
+  const W = Math.max(300, Math.round(box.clientWidth || 640)), H = W < 500 ? 200 : 230, m = { l: 40, r: 10, t: 10, b: 26 };
+  const x0 = Math.min(times[0], times[times.length - 1] - 86400), x1 = times[times.length - 1];
+  let lo = Math.min(...all), hi = Math.max(...all);
+  if (kind === "zrazky" || kind === "vietor") lo = 0;
+  if (kind === "zrazky") hi = Math.max(hi, 0.5);
+  if (kind === "vlh") { lo = Math.max(0, Math.min(lo, 40)); hi = 100; }
+  if (hi - lo < 1) { hi += 0.5; lo -= kind === "zrazky" || kind === "vietor" ? 0 : 0.5; }
+  const step = niceStep(hi - lo, 4);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const X = (t) => m.l + ((t - x0) / (x1 - x0)) * (W - m.l - m.r);
+  const Y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${cfg.label} za posledných 24 hodín` });
+  const axis = el("g", { class: "axis" });
+  const decimals = step < 1 ? 1 : 0;
+  for (let v = lo; v <= hi + step / 2; v += step) {
+    axis.append(el("line", { class: "gridline", x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }));
+    axis.append(el("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }, fmt(v, decimals)));
+  }
+  const tickStep = W < 500 ? 21600 : 10800;
+  for (let t = Math.ceil(x0 / tickStep) * tickStep; t <= x1; t += tickStep) {
+    const x = X(t);
+    if (x < m.l + 14 || x > W - m.r - 14) continue;
+    axis.append(el("line", { class: "gridline", x1: x, x2: x, y1: m.t, y2: H - m.b }));
+    axis.append(el("text", { x, y: H - 8, "text-anchor": "middle" }, hhmm(t)));
+  }
+  svg.append(axis);
+
+  for (const s of series) {
+    if (s.bars) {
+      const bw = Math.max(1.5, ((600) / (x1 - x0)) * (W - m.l - m.r) - 1);
+      s.v.forEach((v, i) => {
+        if (!v) return;
+        svg.append(el("rect", { x: X(times[i]) - bw / 2, y: Y(v), width: bw, height: Math.max(0.5, Y(lo) - Y(v)), fill: s.color, rx: 1 }));
+      });
+      continue;
+    }
+    let dStr = "", prevT = null;
+    s.v.forEach((v, i) => {
+      if (v === null || v === undefined) { prevT = null; return; }
+      const gap = prevT === null || times[i] - prevT > 2100;
+      dStr += `${gap ? "M" : "L"}${X(times[i]).toFixed(1)} ${Y(v).toFixed(1)} `;
+      prevT = times[i];
+    });
+    const attrs = { d: dStr, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" };
+    if (s.dash) attrs["stroke-dasharray"] = s.dash;
+    svg.append(el("path", attrs));
+    const lastI = s.v.map((x, i) => [x, i]).filter(([x]) => x !== null && x !== undefined).pop();
+    if (lastI && !s.dash) svg.append(el("circle", { cx: X(times[lastI[1]]), cy: Y(lastI[0]), r: 3.5, fill: s.color }));
+  }
+
+  const cursor = el("line", { class: "cursor", y1: m.t, y2: H - m.b, visibility: "hidden" });
+  svg.append(cursor);
+  const unitDigits = kind === "vlh" ? 0 : kind === "zrazky" ? 2 : 1;
+  const legend = (i) => series.map((s) => {
+    const v = i === null ? null : s.v[i];
+    return `<span><span class="sw" style="background:${s.color}"></span>${s.name}${i === null ? "" : `: <b class="num">${fmt(v, unitDigits)}</b> ${cfg.unit}`}</span>`;
+  }).join("") + (i === null ? "" : `<span class="muted num">${dayTime(times[i])}</span>`);
+  tip.innerHTML = legend(null);
+  svg.addEventListener("pointermove", (e) => {
+    const r = svg.getBoundingClientRect();
+    const t = x0 + (((e.clientX - r.left) / r.width) * W - m.l) / (W - m.l - m.r) * (x1 - x0);
+    let best = 0;
+    for (let i = 1; i < times.length; i++) if (Math.abs(times[i] - t) < Math.abs(times[best] - t)) best = i;
+    cursor.setAttribute("x1", X(times[best])); cursor.setAttribute("x2", X(times[best]));
+    cursor.setAttribute("visibility", "visible");
+    tip.innerHTML = legend(best);
+  });
+  svg.addEventListener("pointerleave", () => { cursor.setAttribute("visibility", "hidden"); tip.innerHTML = legend(null); });
+  box.replaceChildren(svg);
+
+  const span = (times[times.length - 1] - times[0]) / 3600;
+  const notes = [];
+  if (span < 23) notes.push(`Priebeh je zatiaľ za ${fmt(span, 0)} h; dopĺňa sa ${STATIC_MODE ? "s každou aktualizáciou" : "kým stránka beží"}.`);
+  const selSt = findStation(state.selected);
+  if (isWu(selSt)) {
+    if (kind === "zrazky") notes.push("Stĺpec = úhrn za 10 minút podľa denného úhrnu, ktorý hlási stanica.");
+    if (kind === "tlak") notes.push("Tlak udáva stanica, väčšinou je prepočítaný na hladinu mora.");
+    if (!selSt.vlastna && state.data.wuStav?.interval) notes.push(`Stanica sa obnovuje každých ${Math.round(state.data.wuStav.interval / 60)} minút.`);
+  } else {
+    if (kind === "zrazky") notes.push("Stĺpec = úhrn za 10 minút. Pri štarte sa staršie hodiny sťahujú len po častiach, preto môžu byť neúplné.");
+    if (kind === "tlak") notes.push("Tlak je v nadmorskej výške stanice, nie prepočítaný na hladinu mora.");
+  }
+  note.textContent = notes.join(" ");
+}
+
+/* ---------- Weather Underground ---------- */
+let wuFormFilled = false;
+function renderWuPanel() {
+  const st = state.data && state.data.wuStav;
+  $("#wuCredit").hidden = amateurs().length === 0;
+  if (!st) return;
+  const nast = st.nastavenia || {}, box = $("#wuStatus");
+  const own = amateurs().find((s) => s.vlastna);
+  box.className = "wu-status";
+  if (STATIC_MODE) $("#wuDetails").hidden = true;
+  if (!nast.nastavene) {
+    if (STATIC_MODE) {
+      box.textContent = "Vlastnú stanicu pridáte v repozitári na GitHube: Settings → Secrets and variables → Actions. Do Secrets vložte WU_API_KEY (kľúč k API), do Variables WU_STATION (ID stanice). Pri ďalšej aktualizácii sa stanica zobrazí.";
+    } else {
+      box.textContent = "Zadajte kľúč k API a ID svojej stanice. Stránka potom zobrazí vašu stanicu a stanice v jej okolí.";
+      $("#wuDetails").open = true;
+    }
+  } else if (st.stav === "chyba" || st.stav === "limit") {
+    box.className = "wu-status bad";
+    box.textContent = st.chyba || "Pripojenie zlyhalo.";
+  } else if (st.stav === "pripajam" || !own) {
+    box.textContent = `Pripájam stanicu ${nast.stanica} a hľadám stanice v okolí…`;
+  } else {
+    const parts = [`Pripojená stanica ${own.nazov} (${own.wuId})`];
+    parts.push(st.ostatnych ? `ďalšie stanice: ${st.aktivnych} z ${st.ostatnych} posiela dáta, obnova každých ${Math.round((st.interval || 900) / 60)} min` : "bez ďalších staníc");
+    if (STATIC_MODE) parts.push("nastavenia sú v repozitári na GitHube");
+    box.textContent = parts.join(" · ");
+    if (st.chyba) box.textContent += ` · posledná chyba: ${st.chyba}`;
+  }
+  $("#wuSummary").textContent = nast.nastavene ? `dnes ${st.volaniaDnes} z ${fmt(st.limit, 0)} volaní` : "";
+  $("#wuSummaryToggle").textContent = nast.nastavene ? "Zmeniť nastavenia" : "Nastaviť pripojenie";
+  $("#wuRemove").hidden = !nast.nastavene;
+  $("#wuKey").placeholder = nast.klucKonci ? `uložený kľúč končí na …${nast.klucKonci} (nechajte prázdne)` : "32 znakov";
+  if (!wuFormFilled && document.activeElement?.form !== $("#wuForm")) {
+    wuFormFilled = true;
+    $("#wuStation").value = nast.stanica || "";
+    $("#wuOthers").value = (nast.dalsie || []).join(", ");
+    $("#wuNear").checked = nast.okolie !== false;
+  }
+}
+
+async function wuPost(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  let d = null;
+  try { d = await r.json(); } catch { /* prázdna odpoveď */ }
+  if (!r.ok) throw new Error((d && d.chyba) || `Server odpovedal chybou ${r.status}.`);
+  return d;
+}
+function refreshSoon() { [3000, 8000, 20000, 45000].forEach((ms) => setTimeout(refresh, ms)); }
+
+$("#wuForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = $("#wuMsg");
+  msg.className = "form-msg"; msg.textContent = "Ukladám…";
+  try {
+    await wuPost("/api/wu/nastavenia", {
+      kluc: $("#wuKey").value.trim(), stanica: $("#wuStation").value.trim(),
+      dalsie: $("#wuOthers").value, okolie: $("#wuNear").checked,
+    });
+    $("#wuKey").value = "";
+    msg.className = "form-msg ok"; msg.textContent = "Uložené. Pripájam stanicu, prvé dáta budú do minúty.";
+    state.showWu = true; store.set("pocasie.wu", "1");
+    refreshSoon();
+  } catch (err) {
+    msg.className = "form-msg bad"; msg.textContent = err.message;
+  }
+});
+let removeArmed = null;
+$("#wuRemove").addEventListener("click", async () => {
+  const b = $("#wuRemove");
+  if (!removeArmed) {
+    b.textContent = "Naozaj odpojiť? Kliknite znova";
+    removeArmed = setTimeout(() => { removeArmed = null; b.textContent = "Odpojiť"; }, 5000);
+    return;
+  }
+  clearTimeout(removeArmed); removeArmed = null; b.textContent = "Odpojiť";
+  try {
+    await wuPost("/api/wu/odpojit", {});
+    $("#wuMsg").className = "form-msg ok"; $("#wuMsg").textContent = "Stanica je odpojená a kľúč zmazaný.";
+    wuFormFilled = false;
+    refresh();
+  } catch (err) {
+    $("#wuMsg").className = "form-msg bad"; $("#wuMsg").textContent = err.message;
+  }
+});
+$("#mapZoom").addEventListener("click", () => {
+  state.mapZoom = !state.mapZoom; store.set("pocasie.zoom", state.mapZoom ? "1" : "0");
+  hideTip(); renderMap();
+});
+$("#wuToggle").addEventListener("change", (e) => {
+  state.showWu = e.target.checked; store.set("pocasie.wu", state.showWu ? "1" : "0");
+  renderMap(); renderTable();
+});
+
+/* ---------- Predpoveď ALADIN ---------- */
+const WIND_STOPS = [[0, [222, 236, 214]], [3, [168, 214, 150]], [6, [95, 180, 120]], [10, [236, 200, 72]], [15, [234, 132, 52]], [20, [204, 52, 52]], [25, [140, 32, 110]], [35, [80, 22, 90]]];
+const FC_FIELDS = {
+  t: { label: "Teplota", unit: "°C", stops: T_STOPS, ticks: [-20, -10, 0, 10, 20, 30, 40], digits: 1 },
+  zrazky: { label: "Zrážky", unit: "mm/h", log: true, min: 0.1, digits: 1, ticks: [0.1, 0.5, 1, 2, 5, 10, 20],
+    stops: [[0.1, [190, 224, 247]], [0.5, [120, 184, 236]], [1, [60, 135, 215]], [2, [36, 92, 190]], [5, [98, 62, 178]], [10, [168, 52, 168]], [20, [214, 46, 96]]] },
+  oblacnost: { label: "Oblačnosť", unit: "%", digits: 0, ticks: [0, 25, 50, 75, 100], stops: [[0, [198, 225, 245]], [50, [172, 184, 196]], [100, [112, 122, 134]]] },
+  vietor: { label: "Vietor", unit: "m/s", digits: 1, ticks: [0, 5, 10, 15, 20, 25], stops: WIND_STOPS },
+  naraz: { label: "Nárazy", unit: "m/s", digits: 1, ticks: [0, 5, 10, 15, 20, 25, 30, 35], stops: WIND_STOPS },
+  tlak: { label: "Tlak", unit: "hPa", digits: 1, ticks: [990, 1000, 1010, 1020, 1030, 1040],
+    stops: [[990, [88, 60, 160]], [1000, [70, 130, 200]], [1010, [140, 200, 210]], [1015, [236, 236, 214]], [1020, [245, 205, 120]], [1030, [225, 120, 60]], [1040, [170, 40, 40]]] },
+};
+const FC_NOTES = {
+  t: "Teplota 2 m nad terénom modelu. Model terén vyhladzuje, na horách môže byť skutočnosť chladnejšia.",
+  oblacnost: "Celková oblačnosť: 0 % je jasno, 100 % zamračené.",
+  vietor: "Priemerná rýchlosť vetra 10 m nad zemou.",
+  naraz: "Najsilnejší náraz vetra za interval pred zobrazeným časom.",
+  tlak: "Tlak prepočítaný na hladinu mora, preto sa líši od tlaku na staniciach.",
+};
+// Mestá na orientáciu: index stanice, ktorej polohu použijeme, a krátky názov
+const FC_CITIES = [[11810, "Bratislava"], [11855, "Nitra"], [11803, "Trenčín"], [11865, "Žilina"], [11898, "Banská Bystrica"],
+  [11934, "Poprad"], [11969, "Košice"], [11962, "Bardejov"], [11982, "Michalovce"], [11942, "Rimavská Sobota"]];
+
+const fc = { meta: null, field: FC_FIELDS[store.get("pocasie.fcpole")] ? store.get("pocasie.fcpole") : "t", step: 0, cache: new Map(), geom: null, timer: null, point: new Map() };
+
+function scaleColor(cfg, v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return null;
+  if (cfg.min !== undefined && v < cfg.min) return null;
+  const st = cfg.stops, f = cfg.log ? (x) => Math.log(x) : (x) => x;
+  if (v <= st[0][0]) return st[0][1];
+  for (let i = 1; i < st.length; i++) {
+    if (v <= st[i][0]) {
+      const k = (f(v) - f(st[i - 1][0])) / (f(st[i][0]) - f(st[i - 1][0]));
+      return st[i - 1][1].map((x, j) => Math.round(x + (st[i][1][j] - x) * k));
+    }
+  }
+  return st[st.length - 1][1];
+}
+const PLAY_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1 L11 6 L2 11 Z" fill="currentColor"/></svg>';
+const PAUSE_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="1" width="3" height="10" fill="currentColor"/><rect x="7" y="1" width="3" height="10" fill="currentColor"/></svg>';
+function longTime(ts) {
+  return new Date(ts * 1000).toLocaleString(LOCALE, { weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+async function loadForecastMeta() {
+  let m;
+  try {
+    m = await getJSON(URLS.forecast());
+  } catch (err) {
+    if (String(err.message).includes("404")) $("#forecast").hidden = true;
+    return;
+  }
+  const st = m.stav || {};
+  if (!m.kroky.length) {
+    $("#fcRun").textContent = st.stav === "chyba" ? `Predpoveď sa nepodarilo stiahnuť: ${st.chyba}` :
+      st.spolu ? `Sťahujem predpoveď ALADIN (${st.stiahnute} z ${st.spolu} súborov)…` : "Hľadám najnovší beh modelu ALADIN…";
+    if (!STATIC_MODE) setTimeout(loadForecastMeta, 5000);
+    return;
+  }
+  const changed = !fc.meta || fc.meta.beh !== m.beh;
+  if (changed) {
+    fc.meta = m; fc.cache.clear(); fc.point.clear(); fc.geom = null;
+    const now = Date.now() / 1000;
+    const idx = m.kroky.findIndex((k) => k.cas >= now - 1800);
+    fc.step = idx < 0 ? 0 : idx;
+    setupForecastControls();
+  }
+  const run = new Date(m.beh * 1000);
+  const utc = String(run.getUTCHours()).padStart(2, "0");
+  $("#fcRun").textContent = `Beh modelu ${run.toLocaleString(LOCALE, { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} (${utc} UTC) · sieť 4,5 km · do +${m.kroky[m.kroky.length - 1].h} h`;
+  await ensureField(fc.field);
+  drawForecast();
+  if (changed) renderStationForecast();
+}
+
+async function ensureField(name) {
+  if (fc.cache.has(name)) return fc.cache.get(name);
+  const d = await getJSON(URLS.field(name));
+  fc.cache.set(name, d);
+  return d;
+}
+
+function setupForecastControls() {
+  const seg = $("#fcFields");
+  seg.innerHTML = Object.entries(FC_FIELDS).map(([k, f]) => `<button type="button" data-k="${k}" aria-pressed="${k === fc.field}">${f.label}</button>`).join("");
+  seg.querySelectorAll("button").forEach((b) => b.addEventListener("click", async () => {
+    fc.field = b.dataset.k; store.set("pocasie.fcpole", fc.field);
+    seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    await ensureField(fc.field);
+    drawForecast();
+  }));
+  const slider = $("#fcSlider");
+  slider.max = String(fc.meta.kroky.length - 1);
+  slider.value = String(fc.step);
+  setPlaying(false);
+}
+
+$("#fcSlider").addEventListener("input", (e) => { fc.step = Number(e.target.value); drawForecast(); });
+$("#fcPlay").addEventListener("click", () => setPlaying(!fc.timer));
+queueMicrotask(() => setPlaying(false));
+function setPlaying(on) {
+  const b = $("#fcPlay");
+  clearInterval(fc.timer); fc.timer = null;
+  if (on && fc.meta) {
+    fc.timer = setInterval(() => {
+      fc.step = (fc.step + 1) % fc.meta.kroky.length;
+      $("#fcSlider").value = String(fc.step);
+      drawForecast();
+    }, 650);
+  }
+  b.setAttribute("aria-pressed", String(!!fc.timer));
+  b.innerHTML = fc.timer ? `${PAUSE_ICON} Zastaviť` : `${PLAY_ICON} Prehrať`;
+}
+
+function forecastGeom(w) {
+  const g = fc.meta.mriezka, nx = g.nx, s = w / MAP.w;
+  const n = g.rohy.lat.length, px = new Float32Array(n), py = new Float32Array(n);
+  for (let k = 0; k < n; k++) { const [x, y] = proj(g.rohy.lon[k], g.rohy.lat[k]); px[k] = x * s; py[k] = y * s; }
+  const cells = new Float32Array(g.aktivne.length * 8), centers = new Float32Array(g.aktivne.length * 2);
+  g.aktivne.forEach((k, c) => {
+    const i = k % nx, j = Math.floor(k / nx);
+    const a = j * (nx + 1) + i, ids = [a, a + 1, a + nx + 2, a + nx + 1];
+    ids.forEach((id, q) => { cells[c * 8 + q * 2] = px[id]; cells[c * 8 + q * 2 + 1] = py[id]; });
+    centers[c * 2] = (px[a] + px[a + nx + 2]) / 2; centers[c * 2 + 1] = (py[a] + py[a + nx + 2]) / 2;
+  });
+  return { w, s, cells, centers };
+}
+
+function drawForecast() {
+  if (!fc.meta || !fc.meta.kroky.length) return;
+  const box = $("#fcMap"), canvas = $("#fcCanvas");
+  const w = Math.round(box.clientWidth), h = Math.round((w * MAP.h) / MAP.w), dpr = window.devicePixelRatio || 1;
+  if (!w) return;
+  if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+  canvas.style.height = `${h}px`;
+  if (!fc.geom || fc.geom.w !== w) fc.geom = forecastGeom(w);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const base = css.getPropertyValue("--line").trim(), ink = css.getPropertyValue("--ink").trim(),
+    surface = css.getPropertyValue("--surface").trim(), font = css.getPropertyValue("--font-body").trim();
+  const cfg = FC_FIELDS[fc.field], data = fc.cache.get(fc.field);
+  const vals = data ? data.hodnoty[fc.step] : null, mul = data ? data.nasobok : 1;
+  const { cells } = fc.geom;
+  for (let c = 0; c < cells.length / 8; c++) {
+    const v = vals ? vals[c] / mul : null;
+    const col = scaleColor(cfg, v);
+    ctx.fillStyle = col ? rgb(col) : base;
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(cells[c * 8], cells[c * 8 + 1]);
+    for (let q = 1; q < 4; q++) ctx.lineTo(cells[c * 8 + q * 2], cells[c * 8 + q * 2 + 1]);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  if (borders) {
+    ctx.strokeStyle = ink; ctx.globalAlpha = 0.6; ctx.lineWidth = 1.1; ctx.lineJoin = "round";
+    for (const line of borders) {
+      ctx.beginPath();
+      line.forEach(([lo, la], q) => { const [x, y] = proj(lo, la); q ? ctx.lineTo(x * fc.geom.s, y * fc.geom.s) : ctx.moveTo(x * fc.geom.s, y * fc.geom.s); });
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (state.data) {
+    ctx.font = `600 ${w < 500 ? 11 : 12.5}px ${font}`;
+    ctx.textBaseline = "middle";
+    for (const [id, name] of FC_CITIES) {
+      const st = state.data.stanice.find((x) => x.id === id);
+      if (!st || !st.lat) continue;
+      const [x, y] = proj(st.lon, st.lat).map((v) => v * fc.geom.s);
+      ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = surface; ctx.lineJoin = "round";
+      const tw = ctx.measureText(name).width, left = x + 5 + tw > w - 2;
+      ctx.textAlign = left ? "right" : "left";
+      const tx = left ? x - 5 : x + 5;
+      ctx.strokeText(name, tx, y - 7); ctx.fillText(name, tx, y - 7);
+      ctx.textAlign = "left";
+    }
+  }
+  const k = fc.meta.kroky[fc.step];
+  $("#fcTime").textContent = longTime(k.cas);
+  $("#fcLead").textContent = `+${k.h} h od behu modelu`;
+  let note = FC_NOTES[fc.field] || "";
+  if (fc.field === "zrazky") {
+    note = vals ? `Intenzita zrážok v mm za hodinu, priemer za ${k.okno === 1 ? "hodinu" : `${k.okno} h`} pred zobrazeným časom.` :
+      "V počiatočnom čase modelu zrážky nie sú. Posuňte čas dopredu.";
+  } else if (fc.field === "naraz" && !vals) note = "V počiatočnom čase modelu nárazy nie sú. Posuňte čas dopredu.";
+  $("#fcNote").textContent = note;
+  drawForecastLegend(cfg);
+}
+
+function drawForecastLegend(cfg) {
+  const W = 420, H = 34, lo = cfg.ticks[0], hi = cfg.ticks[cfg.ticks.length - 1];
+  const f = cfg.log ? Math.log : (x) => x;
+  const X = (v) => 8 + ((f(v) - f(lo)) / (f(hi) - f(lo))) * (W - 16);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Stupnica: ${cfg.label} v ${cfg.unit}` });
+  const N = 80;
+  for (let n = 0; n < N; n++) {
+    const a = n / N, v = cfg.log ? Math.exp(f(lo) + a * (f(hi) - f(lo))) : lo + a * (hi - lo);
+    const c = scaleColor(cfg, v) || cfg.stops[0][1];
+    svg.append(el("rect", { x: 8 + a * (W - 16), y: 2, width: (W - 16) / N + 0.6, height: 9, fill: rgb(c) }));
+  }
+  for (const t of cfg.ticks) svg.append(el("text", { x: X(t), y: 26, "text-anchor": "middle" }, fmt(t, t < 1 && t > 0 ? 1 : 0)));
+  const box = $("#fcLegend");
+  box.replaceChildren(svg);
+  const unit = document.createElement("span");
+  unit.className = "muted"; unit.style.fontSize = "12.5px"; unit.textContent = `${cfg.label} (${cfg.unit})`;
+  box.append(unit);
+}
+
+let fcTip = null;
+$("#fcCanvas").addEventListener("pointermove", (e) => {
+  if (!fc.geom) return;
+  const r = e.currentTarget.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const { centers } = fc.geom;
+  let best = -1, bd = Infinity;
+  for (let c = 0; c < centers.length / 2; c++) {
+    const d = (centers[c * 2] - x) ** 2 + (centers[c * 2 + 1] - y) ** 2;
+    if (d < bd) { bd = d; best = c; }
+  }
+  const cellPx = 4.5 / 111 * MAP.scale * fc.geom.s * 1.6;
+  const box = $("#fcMap");
+  fcTip = fcTip || Object.assign(document.createElement("div"), { className: "map-tip" });
+  if (best < 0 || bd > cellPx * cellPx) { fcTip.remove(); return; }
+  const data = fc.cache.get(fc.field), vals = data && data.hodnoty[fc.step], cfg = FC_FIELDS[fc.field];
+  const v = vals ? vals[best] / data.nasobok : null;
+  let near = "";
+  if (state.data) {
+    let nd = Infinity;
+    for (const st of state.data.stanice) {
+      if (!st.lat || !st.nazov) continue;
+      const [sx, sy] = proj(st.lon, st.lat).map((q) => q * fc.geom.s);
+      const d = (sx - x) ** 2 + (sy - y) ** 2;
+      if (d < nd) { nd = d; near = st.nazov; }
+    }
+    if (nd > (cellPx * 3) ** 2) near = "";
+  }
+  fcTip.textContent = `${near ? near + " · " : ""}${v === null ? "—" : fmt(v, cfg.digits)} ${cfg.unit}`;
+  fcTip.style.left = `${x}px`; fcTip.style.top = `${y}px`;
+  box.append(fcTip);
+});
+$("#fcCanvas").addEventListener("pointerleave", () => fcTip?.remove());
+
+/* Predpoveď pre vybranú stanicu */
+async function renderStationForecast() {
+  const box = $("#fcStation");
+  if (!box || !state.data) return;
+  const s = findStation(state.selected);
+  if (!fc.meta || !fc.meta.kroky.length || !s || !s.lat) { box.hidden = true; return; }
+  let d = fc.point.get(s.id);
+  if (!d) {
+    try {
+      if (STATIC_MODE) {
+        const url = URLS.points();
+        if (fc.pointsUrl !== url) { fc.points = await getJSON(url); fc.pointsUrl = url; }
+        d = fc.points[String(s.id)];
+        if (!d) { box.hidden = true; return; }
+      } else {
+        d = await getJSON(URLS.point(s));
+      }
+    } catch { box.hidden = true; return; }
+    fc.point.set(s.id, d);
+  }
+  if (state.selected !== s.id || !$("#fcStation")) return;
+  $("#fcStation").hidden = false;
+  drawStationForecast(d, s);
+}
+
+function drawStationForecast(d, s) {
+  const box = $("#fcChart"), tip = $("#fcChartTip"), r = d.rady, times = r.cas;
+  const W = Math.max(300, Math.round(box.clientWidth || 600)), H = W < 500 ? 190 : 210, m = { l: 34, r: 34, t: 22, b: 24 };
+  const ts = r.t.filter((v) => v !== null);
+  if (!ts.length) { box.innerHTML = ""; return; }
+  const x0 = times[0], x1 = times[times.length - 1];
+  const tStep = niceStep(Math.max(2, Math.max(...ts) - Math.min(...ts)), 4);
+  const tlo = Math.floor(Math.min(...ts) / tStep) * tStep, thi = Math.ceil(Math.max(...ts) / tStep) * tStep;
+  const rmax = Math.max(1, ...r.zrazky.filter((v) => v !== null));
+  const rStep = niceStep(rmax, 3), rhi = Math.ceil(rmax / rStep) * rStep;
+  const X = (t) => m.l + ((t - x0) / (x1 - x0)) * (W - m.l - m.r);
+  const Yt = (v) => m.t + (1 - (v - tlo) / (thi - tlo)) * (H - m.t - m.b);
+  const Yr = (v) => m.t + (1 - v / rhi) * (H - m.t - m.b);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Predpoveď teploty a zrážok" });
+  const g = el("g", { class: "axis" });
+  for (let v = tlo; v <= thi + tStep / 2; v += tStep) {
+    g.append(el("line", { class: "gridline", x1: m.l, x2: W - m.r, y1: Yt(v), y2: Yt(v) }));
+    g.append(el("text", { x: m.l - 6, y: Yt(v) + 4, "text-anchor": "end" }, fmt(v, tStep < 1 ? 1 : 0)));
+  }
+  for (let v = 0; v <= rhi + rStep / 2; v += rStep) g.append(el("text", { x: W - m.r + 6, y: Yr(v) + 4 }, fmt(v, rStep < 1 ? 1 : 0)));
+  g.append(el("text", { x: m.l - 6, y: 12, "text-anchor": "end" }, "°C"));
+  g.append(el("text", { x: W - m.r + 6, y: 12 }, "mm/h"));
+  // polnoci a názvy dní
+  const day = new Date(x0 * 1000); day.setHours(24, 0, 0, 0);
+  let dayStart = x0;
+  for (let t = day.getTime() / 1000; t <= x1 + 1; t += 86400) {
+    g.append(el("line", { class: "gridline", x1: X(t), x2: X(t), y1: m.t - 4, y2: H - m.b }));
+    labelDay(dayStart, t);
+    dayStart = t;
+  }
+  labelDay(dayStart, x1);
+  function labelDay(a, b) {
+    if (X(b) - X(a) < 44) return;
+    const txt = new Date(((a + b) / 2) * 1000).toLocaleDateString(LOCALE, { weekday: "short", day: "numeric", month: "numeric" });
+    g.append(el("text", { x: (X(a) + X(b)) / 2, y: H - 7, "text-anchor": "middle" }, txt));
+  }
+  svg.append(g);
+  r.zrazky.forEach((v, i) => {
+    if (!v || v < 0.05) return;
+    const okno = r.okno[i] || 1, xa = X(times[i] - okno * 3600), xb = X(times[i]);
+    svg.append(el("rect", { x: xa + 0.5, y: Yr(v), width: Math.max(1, xb - xa - 1), height: Yr(0) - Yr(v), fill: "var(--c-rain)", opacity: 0.75 }));
+  });
+  let dStr = "";
+  r.t.forEach((v, i) => { if (v !== null) dStr += `${dStr ? "L" : "M"}${X(times[i]).toFixed(1)} ${Yt(v).toFixed(1)} `; });
+  svg.append(el("path", { d: dStr, fill: "none", stroke: "var(--c-temp)", "stroke-width": 2, "stroke-linejoin": "round" }));
+  const now = Date.now() / 1000;
+  if (now > x0 && now < x1) {
+    svg.append(el("line", { x1: X(now), x2: X(now), y1: m.t - 4, y2: H - m.b, stroke: "var(--accent)", "stroke-width": 1.2 }));
+    svg.append(el("text", { x: X(now) + 4, y: m.t - 8, fill: "var(--accent)", style: "font-size:11px" }, "teraz"));
+  }
+  const cursor = el("line", { class: "cursor", y1: m.t, y2: H - m.b, visibility: "hidden" });
+  svg.append(cursor);
+  const show = (i) => {
+    if (i === null) {
+      tip.innerHTML = `<span><span class="sw" style="background:var(--c-temp)"></span>Teplota</span><span><span class="sw" style="background:var(--c-rain)"></span>Zrážky</span>`;
+      return;
+    }
+    const parts = [`<span class="muted num">${longTime(times[i])}</span>`, `<span><b class="num">${fmt(r.t[i])}</b> °C</span>`];
+    if (r.zrazky[i] !== null) parts.push(`<span><b class="num">${fmt(r.zrazky[i], 1)}</b> mm/h</span>`);
+    if (r.naraz[i] !== null) parts.push(`<span>nárazy <b class="num">${fmt(r.naraz[i], 0)}</b> m/s</span>`);
+    if (r.oblacnost[i] !== null) parts.push(`<span>oblačnosť <b class="num">${fmt(r.oblacnost[i], 0)}</b> %</span>`);
+    tip.innerHTML = parts.join("");
+  };
+  show(null);
+  svg.addEventListener("pointermove", (e) => {
+    const rect = svg.getBoundingClientRect();
+    const t = x0 + ((((e.clientX - rect.left) / rect.width) * W - m.l) / (W - m.l - m.r)) * (x1 - x0);
+    let best = 0;
+    for (let i = 1; i < times.length; i++) if (Math.abs(times[i] - t) < Math.abs(times[best] - t)) best = i;
+    cursor.setAttribute("x1", X(times[best])); cursor.setAttribute("x2", X(times[best])); cursor.setAttribute("visibility", "visible");
+    show(best);
+  });
+  svg.addEventListener("pointerleave", () => { cursor.setAttribute("visibility", "hidden"); show(null); });
+  box.replaceChildren(svg);
+  const notes = ["Najbližší bod modelu so sieťou 4,5 km."];
+  if (s.vyska && s.vyska > 900) notes.push("Model terén vyhladzuje, na horskej stanici môže byť skutočná teplota nižšia.");
+  $("#fcChartNote").textContent = notes.join(" ");
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawForecast());
+
+/* Štart */
+window.addEventListener("hashchange", () => {
+  const id = parseId(decodeURIComponent(location.hash.slice(1)));
+  if (state.data && findStation(id)) select(id);
+});
+let resizeTimer = null, lastWidth = window.innerWidth;
+window.addEventListener("resize", () => {
+  if (window.innerWidth === lastWidth) return;
+  lastWidth = window.innerWidth;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    drawForecast();
+    if (!state.data) return;
+    renderMap();
+    if (state.stationData && state.stationFor === state.selected) renderChart();
+    renderStationForecast();
+  }, 150);
+});
+refresh();
+setInterval(refresh, STATIC_MODE ? 120000 : 60000);
+loadForecastMeta();
+setInterval(loadForecastMeta, 10 * 60000);
+setInterval(() => { if (state.data) renderStatus(); }, 30000);
+</script>
+</body>
+</html>

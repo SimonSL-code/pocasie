@@ -1,0 +1,74 @@
+# Každých 10 minút stiahne nové dáta zo SHMÚ (a z Weather Underground, ak je nastavený)
+# a zverejní stránku na GitHub Pages. Spustiť sa dá aj ručne: Actions → Aktualizácia počasia → Run workflow.
+name: Aktualizácia počasia
+
+on:
+  schedule:
+    - cron: "7-59/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # uloženie stavu do vetvy "stav"
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pocasie
+  cancel-in-progress: false
+
+jobs:
+  aktualizacia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.nasadenie.outputs.page_url }}
+    steps:
+      - name: Stiahnuť kód
+        uses: actions/checkout@v6
+
+      - name: Načítať stav z predchádzajúceho behu
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git ls-remote --exit-code --heads origin stav >/dev/null 2>&1; then
+            git clone --quiet --depth 1 --branch stav \
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" stav
+            rm -rf stav/.git
+          else
+            mkdir -p stav
+          fi
+
+      - name: Stiahnuť dáta a pripraviť stránku
+        env:
+          WU_API_KEY: ${{ secrets.WU_API_KEY }}
+          WU_STATION: ${{ vars.WU_STATION }}
+          WU_DALSIE: ${{ vars.WU_DALSIE }}
+        run: python3 generuj.py --stav stav --vystup _site
+
+      - name: Uložiť stav pre ďalší beh
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f stav/stav.json.gz ] || exit 0
+          cd stav
+          git init --quiet -b stav
+          git add -A
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit --quiet -m "Stav $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push --quiet --force \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" stav
+
+      - name: Pripraviť GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Nahrať stránku
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Zverejniť stránku
+        id: nasadenie
+        uses: actions/deploy-pages@v5
