@@ -14,8 +14,9 @@ Na stránke nájdete:
   dohľadnosť, sneh, globálne žiarenie, prízemná teplota, teplota pôdy a stav počasia,
 - grafy teploty, vetra, zrážok, tlaku a vlhkosti za posledných 24 hodín,
 - mapy predpovede modelu ALADIN na 3 až 4 dni: teplota, zrážky, oblačnosť, vietor, nárazy a tlak,
-  s posuvníkom času a prehrávaním,
-- predpoveď teploty a zrážok pre vybranú stanicu z najbližšieho bodu modelu,
+  s posuvníkom času a prehrávaním; na GitHube aj mapy modelu ICON-EU na 5 dní,
+- graf predpovede pre vybranú stanicu, ktorý porovnáva modely ALADIN, ICON-EU a ECMWF
+  (teplota, súčet zrážok, nárazy vetra),
 - vaša vlastná stanica z Weather Underground a až 20 amatérskych staníc v jej okolí,
   s vlastnou značkou na mape a kontrolou kvality.
 
@@ -111,6 +112,19 @@ sú kroky hodinové, ďalej po 3 hodinách.
 - **Teplota** platí pre terén modelu, ktorý je vyhladený. Na horských staniciach preto môže
   byť skutočná teplota iná.
 
+## Ďalšie modely: ICON-EU a ECMWF
+
+- **Mapa ICON-EU** (Nemecká meteorologická služba DWD, sieť 7 km, do +120 hodín) je len na stránke
+  z GitHubu. `generuj.py` ju sťahuje z bezplatného [Open-Meteo](https://open-meteo.com/) po každom
+  behu o 00, 06, 12 a 18 UTC. Na mape sa zobrazuje každý druhý bod siete (po 0,125°, asi 9 až 14 km),
+  ktorý stačí na plynulú mapu a šetrí denný limit Open-Meteo. Modely s jemnejšou sieťou (ICON-D2,
+  MeteoSwiss ICON-CH1/CH2) celé Slovensko nepokrývajú.
+- **Graf pre stanicu** si údaje ICON-EU a ECMWF IFS (sieť 9 km) načíta priamo v prehliadači
+  z Open-Meteo. Teplotu Open-Meteo prepočíta na nadmorskú výšku stanice, ALADIN ukazuje hodnotu
+  najbližšieho bodu modelu. Ak Open-Meteo nie je dostupné, graf ukáže len ALADIN.
+- Open-Meteo je zadarmo na nekomerčné použitie, údaje sú pod licenciou CC BY 4.0.
+- Sťahovanie mapy ICON vypnete voľbou `python3 generuj.py --bez-icon`.
+
 ## Vlastná stanica z Weather Underground
 
 Ak máte stanicu, ktorá posiela dáta na Weather Underground, stránka ju zobrazí spolu so
@@ -193,3 +207,5 @@ Server si zmeny v súbore načíta sám, netreba ho reštartovať.
 - Geometria mriežky a čísla parametrov modelu ALADIN vychádzajú z toho istého projektu; čítanie
   súborov GRIB2 bolo overené voči knižnici ecCodes (ECMWF).
 - Štátne hranice: Natural Earth 1:10m, voľné dielo (public domain).
+- Modely ICON-EU (DWD) a ECMWF IFS: [Open-Meteo.com](https://open-meteo.com/), licencia
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

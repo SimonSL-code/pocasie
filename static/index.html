@@ -32,6 +32,9 @@
   --c-press: #6b5a2e;
   --c-hum: #1f8a7a;
   --grid: #e3e9ed;
+  --m-aladin: #0a6b70;
+  --m-icon: #c4511f;
+  --m-ecmwf: #6b46c1;
   --font-display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
   --font-body: "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
@@ -44,6 +47,7 @@
     --line: #25333c; --accent: #4cc2bd; --accent-ink: #062224; --ok: #5fc58b; --warn: #e3a33b;
     --bad: #ff8a80; --c-temp: #ff8a5c; --c-dew: #6cc0ec; --c-wind: #4cc2bd; --c-gust: #b99af0;
     --c-rain: #6fa4ff; --c-press: #d2bd84; --c-hum: #59d1bd; --grid: #1f2b33; color-scheme: dark;
+    --m-aladin: #4cc2bd; --m-icon: #ff8a5c; --m-ecmwf: #b99af0;
   }
 }
 :root[data-theme="dark"] {
@@ -51,6 +55,7 @@
   --line: #25333c; --accent: #4cc2bd; --accent-ink: #062224; --ok: #5fc58b; --warn: #e3a33b;
   --bad: #ff8a80; --c-temp: #ff8a5c; --c-dew: #6cc0ec; --c-wind: #4cc2bd; --c-gust: #b99af0;
   --c-rain: #6fa4ff; --c-press: #d2bd84; --c-hum: #59d1bd; --grid: #1f2b33; color-scheme: dark;
+  --m-aladin: #4cc2bd; --m-icon: #ff8a5c; --m-ecmwf: #b99af0;
 }
 
 * { box-sizing: border-box; }
@@ -216,6 +221,12 @@ td.name .idx { font-size: 12px; color: var(--muted); margin-left: 6px; }
 
 /* Predpoveď */
 .fc-head-seg { margin-top: 0; }
+.fc-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.fc-model-seg { margin-top: 0; }
+.fc-model-seg button { padding: 3px 10px; font-size: 13px; }
+.fc-model-seg button::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--mc, var(--muted)); }
+.fc-model-seg button[data-m="aladin"] { --mc: var(--m-aladin); }
+.fc-model-seg button[data-m="icon"] { --mc: var(--m-icon); }
 .fc-run { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
 .fc-map { position: relative; }
 .fc-map canvas { display: block; width: 100%; height: auto; touch-action: pan-y; }
@@ -232,6 +243,13 @@ td.name .idx { font-size: 12px; color: var(--muted); margin-left: 6px; }
 .fc-legend text { font-family: var(--font-data); font-size: 11px; fill: var(--muted); }
 .fc-station { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .fc-station .chart text { font-family: var(--font-data); font-size: 11px; fill: var(--muted); }
+.fc-st-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
+.fc-st-seg { margin-top: 0; }
+.fc-st-seg button { padding: 3px 10px; font-size: 13px; }
+.fc-st-tip { margin-top: 8px; gap: 2px 14px; }
+.fc-st-tip .when { flex-basis: 100%; }
+.fc-st-tip .sw { height: 3px; width: 14px; }
+.fc-st-tip .mdl { white-space: nowrap; }
 
 footer { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: space-between; }
 footer a { color: inherit; }
@@ -334,7 +352,10 @@ footer a { color: inherit; }
   <section class="panel" id="forecast" aria-labelledby="fcTitle">
     <div class="panel-head">
       <div>
-        <h2 id="fcTitle">Predpoveď modelu ALADIN</h2>
+        <div class="fc-title-row">
+          <h2 id="fcTitle">Predpoveď modelu ALADIN</h2>
+          <div class="seg fc-model-seg" id="fcModels" role="group" aria-label="Model predpovede" hidden></div>
+        </div>
         <p class="fc-run" id="fcRun">Načítavam predpoveď…</p>
       </div>
       <div class="seg fc-head-seg" id="fcFields" role="group" aria-label="Zobrazená veličina"></div>
@@ -351,6 +372,7 @@ footer a { color: inherit; }
 
   <footer>
     <span>Zdroj dát: Slovenský hydrometeorologický ústav, <a href="https://opendata.shmu.sk/" target="_blank" rel="noopener">opendata.shmu.sk</a>. Hranice: Natural Earth.</span>
+    <span>Modely ICON-EU (DWD) a ECMWF IFS: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>).</span>
     <span id="wuCredit" hidden>Amatérske stanice: <a href="https://www.wunderground.com/" target="_blank" rel="noopener">Weather Underground</a>.</span>
     <span>Časy sú uvedené v miestnom čase prehliadača.</span>
   </footer>
@@ -361,12 +383,18 @@ footer a { color: inherit; }
 /* Režim: "static" = stránka na GitHub Pages (dáta pripravuje generuj.py), inak lokálny server.py */
 const STATIC_MODE = document.documentElement.dataset.mode === "static";
 const minuteTag = () => Math.floor(Date.now() / 60000);
+/* Modely na mape predpovede. ICON-EU pripravuje len generuj.py (GitHub), lokálny server.py má iba ALADIN. */
+const FC_MODELS = {
+  aladin: { label: "ALADIN", dir: "data/", popis: "SHMÚ · sieť 4,5 km" },
+  icon: { label: "ICON-EU", dir: "data/icon/", popis: "DWD · sieť 7 km, na mape po 0,125° · dáta Open-Meteo", jenStaticky: true },
+};
+const runTag = (m) => (fc.models[m].meta && fc.models[m].meta.beh) || 0;
 const URLS = STATIC_MODE ? {
   current: () => `data/aktualne.json?t=${minuteTag()}`,
   station: (id) => `data/stanice/${encodeURIComponent(id)}.json?t=${(state.data && state.data.generovane) || minuteTag()}`,
-  forecast: () => `data/predpoved.json?t=${Math.floor(Date.now() / 600000)}`,
-  field: (name) => `data/predpoved-${name}.json?t=${(fc.meta && fc.meta.beh) || 0}`,
-  points: () => `data/predpoved-body.json?t=${(fc.meta && fc.meta.beh) || 0}-${(state.data && state.data.generovane) || 0}`,
+  forecast: (m) => `${FC_MODELS[m].dir}predpoved.json?t=${Math.floor(Date.now() / 600000)}`,
+  field: (name, m) => `${FC_MODELS[m].dir}predpoved-${name}.json?t=${runTag(m)}`,
+  points: () => `data/predpoved-body.json?t=${runTag("aladin")}-${(state.data && state.data.generovane) || 0}`,
 } : {
   current: () => "/api/current",
   station: (id) => `/api/station/${id}`,
@@ -479,6 +507,17 @@ function visibility(m) {
 }
 
 /* ---------- Stav aplikácie ---------- */
+// Graf predpovede pre stanicu: porovnanie modelov
+const FC_ST_KINDS = {
+  t: { label: "Teplota", unit: "°C", digits: 1 },
+  zrazky: { label: "Zrážky", unit: "mm", digits: 1 },
+  naraz: { label: "Nárazy", unit: "m/s", digits: 0 },
+};
+const FC_ST_MODELS = {
+  aladin: { label: "ALADIN", color: "var(--m-aladin)" },
+  icon: { label: "ICON-EU", color: "var(--m-icon)" },
+  ecmwf: { label: "ECMWF", color: "var(--m-ecmwf)" },
+};
 const state = {
   data: null,
   selected: null,
@@ -486,6 +525,7 @@ const state = {
   dir: Number(store.get("pocasie.dir")) || 1,
   query: "",
   chart: store.get("pocasie.graf") || "t",
+  fcChart: FC_ST_KINDS[store.get("pocasie.fcgraf")] ? store.get("pocasie.fcgraf") : "t",
   stationData: null,
   stationFor: null,
   stationCas: null,
@@ -916,18 +956,26 @@ function renderDetail() {
     ${qcHtml}
     <div class="readouts">${cells.join("")}</div>
     ${soilHtml}
-    <div class="seg" role="group" aria-label="Graf za posledných 24 hodín">${seg}</div>
+    <div class="seg" id="chartSeg" role="group" aria-label="Graf za posledných 24 hodín">${seg}</div>
     <div class="chart-tip" id="chartTip"></div>
     <div class="chart" id="chart"><div class="empty">Načítavam priebeh…</div></div>
     <p class="chart-note" id="chartNote"></p>
     <div class="fc-station" id="fcStation" hidden>
-      <div class="label">Predpoveď ALADIN pre túto stanicu</div>
-      <div class="chart-tip" id="fcChartTip"></div>
+      <div class="fc-st-head">
+        <div class="label">Predpoveď pre túto stanicu</div>
+        <div class="seg fc-st-seg" id="fcStSeg" role="group" aria-label="Veličina v predpovedi">${Object.entries(FC_ST_KINDS).map(([k, c]) => `<button type="button" data-k="${k}" aria-pressed="${state.fcChart === k}">${c.label}</button>`).join("")}</div>
+      </div>
+      <div class="chart-tip fc-st-tip" id="fcChartTip"></div>
       <div class="chart" id="fcChart"></div>
       <p class="chart-note" id="fcChartNote"></p>
     </div>`;
-  box.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
+  box.querySelectorAll("#chartSeg button").forEach((b) => b.addEventListener("click", () => {
     state.chart = b.dataset.k; store.set("pocasie.graf", state.chart); renderDetail();
+  }));
+  box.querySelectorAll("#fcStSeg button").forEach((b) => b.addEventListener("click", () => {
+    state.fcChart = b.dataset.k; store.set("pocasie.fcgraf", state.fcChart);
+    box.querySelectorAll("#fcStSeg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    drawStationForecast();
   }));
   if (state.stationData && state.stationFor === s.id) renderChart();
   renderStationForecast();
@@ -1180,7 +1228,19 @@ const FC_CITIES = [["Bratislava", 48.1486, 17.1077, 1], ["Nitra", 48.3069, 18.08
   ["Prešov", 49.0018, 21.2393, 0], ["Košice", 48.7164, 21.2611, 1], ["Bardejov", 49.2918, 21.2727, 0],
   ["Michalovce", 48.7543, 21.9195, 0], ["Rimavská Sobota", 48.3820, 20.0218, 0]];
 
-const fc = { meta: null, field: FC_FIELDS[store.get("pocasie.fcpole")] ? store.get("pocasie.fcpole") : "t", step: 0, cache: new Map(), geom: null, timer: null, point: new Map() };
+const FC_MODEL_KEYS = Object.keys(FC_MODELS).filter((k) => STATIC_MODE || !FC_MODELS[k].jenStaticky);
+const fc = {
+  model: FC_MODEL_KEYS.includes(store.get("pocasie.model")) ? store.get("pocasie.model") : "aladin",
+  field: FC_FIELDS[store.get("pocasie.fcpole")] ? store.get("pocasie.fcpole") : "t",
+  step: 0, timer: null, point: new Map(),
+  models: Object.fromEntries(FC_MODEL_KEYS.map((k) => [k, { meta: null, cache: new Map(), geom: null, stav: null, chyba404: false }])),
+};
+// fc.meta, fc.cache a fc.geom patria práve zobrazenému modelu
+Object.defineProperties(fc, {
+  meta: { get() { return this.models[this.model].meta; } },
+  cache: { get() { return this.models[this.model].cache; } },
+  geom: { get() { return this.models[this.model].geom; }, set(v) { this.models[this.model].geom = v; } },
+});
 
 function scaleColor(cfg, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return null;
@@ -1201,42 +1261,95 @@ function longTime(ts) {
   return new Date(ts * 1000).toLocaleString(LOCALE, { weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-async function loadForecastMeta() {
+/* Načíta prehľad behu jedného modelu; vráti true, ak prišiel nový beh. */
+async function loadModelMeta(key) {
+  const M = fc.models[key];
   let m;
   try {
-    m = await getJSON(URLS.forecast());
+    m = await getJSON(URLS.forecast(key));
   } catch (err) {
-    if (String(err.message).includes("404")) $("#forecast").hidden = true;
-    return;
+    M.chyba404 = String(err.message).includes("404");
+    return false;
   }
-  const st = m.stav || {};
-  if (!m.kroky.length) {
+  M.chyba404 = false;
+  M.stav = m.stav || {};
+  if (!m.kroky || !m.kroky.length) return false;
+  if (M.meta && M.meta.beh === m.beh) { M.meta.stav = m.stav; return false; }
+  M.meta = m; M.cache.clear(); M.geom = null;
+  return true;
+}
+
+async function loadForecastMeta() {
+  const changed = {};
+  await Promise.all(FC_MODEL_KEYS.map(async (k) => { changed[k] = await loadModelMeta(k); }));
+  const ready = FC_MODEL_KEYS.filter((k) => fc.models[k].meta);
+  renderModelSeg(ready);
+  if (!ready.length) {
+    const A = fc.models.aladin, st = A.stav || {};
+    if (FC_MODEL_KEYS.every((k) => fc.models[k].chyba404)) { $("#forecast").hidden = true; return; }
     $("#fcRun").textContent = st.stav === "chyba" ? `Predpoveď sa nepodarilo stiahnuť: ${st.chyba}` :
       st.spolu ? `Sťahujem predpoveď ALADIN (${st.stiahnute} z ${st.spolu} súborov)…` : "Hľadám najnovší beh modelu ALADIN…";
     if (!STATIC_MODE) setTimeout(loadForecastMeta, 5000);
     return;
   }
-  const changed = !fc.meta || fc.meta.beh !== m.beh;
-  if (changed) {
-    fc.meta = m; fc.cache.clear(); fc.point.clear(); fc.geom = null;
+  let reset = changed[fc.model];
+  if (!fc.meta) { fc.model = ready[0]; reset = true; }
+  if (reset) {
     const now = Date.now() / 1000;
-    const idx = m.kroky.findIndex((k) => k.cas >= now - 1800);
+    const idx = fc.meta.kroky.findIndex((k) => k.cas >= now - 1800);
     fc.step = idx < 0 ? 0 : idx;
     setupForecastControls();
   }
-  const run = new Date(m.beh * 1000);
-  const utc = String(run.getUTCHours()).padStart(2, "0");
-  $("#fcRun").textContent = `Beh modelu ${run.toLocaleString(LOCALE, { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} (${utc} UTC) · sieť 4,5 km · do +${m.kroky[m.kroky.length - 1].h} h`;
+  renderModelSeg(ready);
+  showRunInfo();
   await ensureField(fc.field);
   drawForecast();
-  if (changed) renderStationForecast();
+  if (changed.aladin || changed.icon) { fc.point.clear(); renderStationForecast(); }
+}
+
+function showRunInfo() {
+  const m = fc.meta, info = FC_MODELS[fc.model];
+  const run = new Date(m.beh * 1000);
+  const utc = String(run.getUTCHours()).padStart(2, "0");
+  $("#fcTitle").textContent = `Predpoveď modelu ${info.label}`;
+  $("#fcRun").textContent = `Beh ${run.toLocaleString(LOCALE, { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })} (${utc} UTC) · ${info.popis} · do +${m.kroky[m.kroky.length - 1].h} h`;
+}
+
+function renderModelSeg(ready) {
+  const seg = $("#fcModels");
+  seg.hidden = ready.length < 2;
+  if (seg.hidden) return;
+  const html = ready.map((k) => `<button type="button" data-m="${k}" aria-pressed="${k === fc.model}">${FC_MODELS[k].label}</button>`).join("");
+  if (seg.dataset.html === html) return;
+  seg.dataset.html = html;
+  seg.innerHTML = html;
+  seg.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => setModel(b.dataset.m)));
+}
+
+/* Prepnutie modelu: čas na posuvníku zostane čo najbližšie tomu, ktorý bol zobrazený */
+async function setModel(key) {
+  if (key === fc.model || !fc.models[key] || !fc.models[key].meta) return;
+  const shown = fc.meta ? fc.meta.kroky[fc.step].cas : Date.now() / 1000;
+  const playing = !!fc.timer;
+  fc.model = key; store.set("pocasie.model", key);
+  const ks = fc.meta.kroky;
+  let best = 0;
+  ks.forEach((k, i) => { if (Math.abs(k.cas - shown) < Math.abs(ks[best].cas - shown)) best = i; });
+  fc.step = best;
+  setupForecastControls();
+  renderModelSeg(FC_MODEL_KEYS.filter((k) => fc.models[k].meta));
+  try { await ensureField(fc.field); } catch { /* nakreslí sa aspoň podklad */ }
+  if (fc.model !== key) return;
+  showRunInfo();
+  drawForecast();
+  if (playing) setPlaying(true);
 }
 
 async function ensureField(name) {
-  if (fc.cache.has(name)) return fc.cache.get(name);
-  const d = await getJSON(URLS.field(name));
-  adaptScale(name, d);
-  fc.cache.set(name, d);
+  const key = fc.model, M = fc.models[key];
+  if (M.cache.has(name)) return M.cache.get(name);
+  const d = await getJSON(URLS.field(name, key));
+  M.cache.set(name, d);
   return d;
 }
 
@@ -1292,10 +1405,23 @@ const LAM = (() => {
 })();
 
 let outline = null;
-fetch("slovensko.json").then((r) => r.json()).then((d) => { outline = d.obrys; if (fc.meta) { fc.geom = null; drawForecast(); } if (state.data) renderMap(); }).catch(() => {});
+fetch("slovensko.json").then((r) => r.json()).then((d) => {
+  outline = d.obrys;
+  for (const M of Object.values(fc.models)) M.geom = null;
+  if (fc.meta) drawForecast();
+  if (state.data) renderMap();
+}).catch(() => {});
+
+/* Prevod zemepisných súradníc na index mriežky: ALADIN má Lambertovu projekciu, ICON pravidelnú sieť v stupňoch */
+function gridFns(g) {
+  if (g.typ === "latlon") {
+    return { toGrid: (lat, lon) => [(lon - g.lon0) / g.dlon, (lat - g.lat0) / g.dlat], toLatLon: (i, j) => [g.lat0 + j * g.dlat, g.lon0 + i * g.dlon] };
+  }
+  return LAM;
+}
 
 function forecastGeom(w) {
-  const g = fc.meta.mriezka, NX = g.nx, NY = g.ny, s = w / MAP.w, h = Math.round((w * MAP.h) / MAP.w);
+  const g = fc.meta.mriezka, NX = g.nx, NY = g.ny, s = w / MAP.w, h = Math.round((w * MAP.h) / MAP.w), GF = gridFns(g);
   const r = w > 700 ? 2 : 1;                      // na širokej obrazovke počítame každý druhý pixel a zväčšíme hladko
   const ow = Math.ceil(w / r), oh = Math.ceil(h / r);
   const base = new Int32Array(ow * oh).fill(-1), fx = new Float32Array(ow * oh), fy = new Float32Array(ow * oh);
@@ -1303,7 +1429,7 @@ function forecastGeom(w) {
     const lat = MAP.lat1 - (((y + 0.5) * r) / s) / MAP.scale;
     for (let x = 0; x < ow; x++) {
       const lon = (((x + 0.5) * r) / s) / (MAP.kx * MAP.scale) + MAP.lon0;
-      const [gi, gj] = LAM.toGrid(lat, lon);
+      const [gi, gj] = GF.toGrid(lat, lon);
       const i0 = Math.floor(gi), j0 = Math.floor(gj);
       if (i0 < 0 || j0 < 0 || i0 >= NX - 1 || j0 >= NY - 1) continue;
       const p = y * ow + x;
@@ -1313,7 +1439,7 @@ function forecastGeom(w) {
   // poloha uzlov mriežky na mape (pre izočiary)
   const nodeX = new Float32Array(NX * NY), nodeY = new Float32Array(NX * NY);
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
-    const [la, lo] = LAM.toLatLon(i, j), [x, y] = proj(lo, la);
+    const [la, lo] = GF.toLatLon(i, j), [x, y] = proj(lo, la);
     nodeX[j * NX + i] = x * s; nodeY[j * NX + i] = y * s;
   }
   let path = null;
@@ -1331,7 +1457,7 @@ function forecastGeom(w) {
 
 function fieldGrid(vals, mul) {
   const g = fc.meta.mriezka, grid = new Float32Array(g.nx * g.ny).fill(NaN);
-  if (vals) g.aktivne.forEach((k, c) => { grid[k] = vals[c] / mul; });
+  if (vals) g.aktivne.forEach((k, c) => { const v = vals[c]; grid[k] = v === null || v === undefined ? NaN : v / mul; });
   return grid;
 }
 
@@ -1415,6 +1541,8 @@ function drawForecast() {
   const vals = data ? data.hodnoty[fc.step] : null, mul = data ? data.nasobok : 1;
   const grid = fieldGrid(vals, mul);
   fc.lastGrid = vals ? grid : null;
+  // stupnica tlaku podľa rozsahu práve zobrazeného modelu
+  if (data && cfg.adaptive && cfg._pre !== data) { adaptScale(fc.field, data); cfg._pre = data; }
 
   // 1) farebné pole, hladko interpolované z mriežky modelu
   if (!G.lut[fc.field]) G.lut[fc.field] = colorLut(cfg, fc.field);
@@ -1595,108 +1723,230 @@ $("#fcCanvas").addEventListener("pointermove", (e) => {
 });
 $("#fcCanvas").addEventListener("pointerleave", () => fcTip?.remove());
 
-/* Predpoveď pre vybranú stanicu */
+/* Predpoveď pre vybranú stanicu: ALADIN z dát stránky, ICON-EU a ECMWF IFS priamo z Open-Meteo */
+const OPEN_METEO = "https://api.open-meteo.com/v1/forecast";
+const omCache = new Map();
+let fcSt = null;
+
+function openMeteoPoint(s) {
+  const lat = s.lat.toFixed(4), lon = s.lon.toFixed(4), elev = s.vyska ? Math.round(s.vyska) : null;
+  const key = `${lat},${lon},${elev}`, hit = omCache.get(key);
+  if (hit && Date.now() - hit.at < 20 * 60000) return hit.p;
+  const q = [`latitude=${lat}`, `longitude=${lon}`, "hourly=temperature_2m,precipitation,wind_gusts_10m", "models=icon_eu,ecmwf_ifs",
+    "wind_speed_unit=ms", "forecast_hours=121", "past_hours=3", "timeformat=unixtime"];
+  if (elev !== null) q.push(`elevation=${elev}`);
+  const p = fetch(`${OPEN_METEO}?${q.join("&")}`).then((r) => { if (!r.ok) throw new Error(`Open-Meteo ${r.status}`); return r.json(); });
+  omCache.set(key, { at: Date.now(), p });
+  p.catch(() => omCache.delete(key));
+  return p;
+}
+
+async function aladinPoint(s) {
+  const A = fc.models.aladin;
+  if (!A || !A.meta) return null;
+  if (STATIC_MODE) {
+    const url = URLS.points();
+    if (fc.pointsUrl !== url) {
+      fc.pointsUrl = url; fc.pointsP = getJSON(url);
+      fc.pointsP.catch(() => { fc.pointsUrl = null; });
+    }
+    return (await fc.pointsP)[String(s.id)] || null;
+  }
+  if (!fc.point.has(s.id)) {
+    const p = getJSON(URLS.point(s));
+    fc.point.set(s.id, p);
+    p.catch(() => fc.point.delete(s.id));
+  }
+  return fc.point.get(s.id);
+}
+
+/* Zjednotí rady modelov: čas, dĺžka intervalu v hodinách, teplota, zrážky v mm/h, nárazy */
+function modelSeries(al, om) {
+  const out = [];
+  if (al && al.rady && al.rady.cas) {
+    const r = al.rady;
+    out.push({ key: "aladin", cas: r.cas, okno: r.okno || [], t: r.t || [], zrazky: r.zrazky || [], naraz: r.naraz || [] });
+  }
+  const h = om && om.hourly;
+  if (h && h.time) {
+    for (const [key, sfx] of [["icon", "icon_eu"], ["ecmwf", "ecmwf_ifs"]]) {
+      const t = h[`temperature_2m_${sfx}`];
+      if (!t || !t.some((v) => v !== null)) continue;
+      out.push({ key, cas: h.time, okno: [], t, zrazky: h[`precipitation_${sfx}`] || [], naraz: h[`wind_gusts_10m_${sfx}`] || [] });
+    }
+  }
+  return out;
+}
+
 async function renderStationForecast() {
   const box = $("#fcStation");
   if (!box || !state.data) return;
   const s = findStation(state.selected);
-  if (!fc.meta || !fc.meta.kroky.length || !s || !s.lat) { box.hidden = true; return; }
-  let d = fc.point.get(s.id);
-  if (!d) {
-    try {
-      if (STATIC_MODE) {
-        const url = URLS.points();
-        if (fc.pointsUrl !== url) { fc.points = await getJSON(url); fc.pointsUrl = url; }
-        d = fc.points[String(s.id)];
-        if (!d) { box.hidden = true; return; }
-      } else {
-        d = await getJSON(URLS.point(s));
-      }
-    } catch { box.hidden = true; return; }
-    fc.point.set(s.id, d);
-  }
+  if (!s || s.lat === null || s.lat === undefined) { box.hidden = true; return; }
+  const [al, om] = await Promise.all([aladinPoint(s).catch(() => null), openMeteoPoint(s).catch(() => null)]);
   if (state.selected !== s.id || !$("#fcStation")) return;
+  const series = modelSeries(al, om);
+  if (!series.length) { $("#fcStation").hidden = true; return; }
+  fcSt = { id: s.id, s, series, omChyba: !om };
   $("#fcStation").hidden = false;
-  drawStationForecast(d, s);
+  drawStationForecast();
 }
 
-function drawStationForecast(d, s) {
-  const box = $("#fcChart"), tip = $("#fcChartTip"), r = d.rady, times = r.cas;
-  const W = Math.max(300, Math.round(box.clientWidth || 600)), H = W < 500 ? 190 : 210, m = { l: 34, r: 34, t: 22, b: 24 };
-  const ts = r.t.filter((v) => v !== null);
-  if (!ts.length) { box.innerHTML = ""; return; }
-  const x0 = times[0], x1 = times[times.length - 1];
-  const tStep = niceStep(Math.max(2, Math.max(...ts) - Math.min(...ts)), 4);
-  const tlo = Math.floor(Math.min(...ts) / tStep) * tStep, thi = Math.ceil(Math.max(...ts) / tStep) * tStep;
-  const rmax = Math.max(1, ...r.zrazky.filter((v) => v !== null));
-  const rStep = niceStep(rmax, 3), rhi = Math.ceil(rmax / rStep) * rStep;
-  const X = (t) => m.l + ((t - x0) / (x1 - x0)) * (W - m.l - m.r);
-  const Yt = (v) => m.t + (1 - (v - tlo) / (thi - tlo)) * (H - m.t - m.b);
-  const Yr = (v) => m.t + (1 - v / rhi) * (H - m.t - m.b);
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Predpoveď teploty a zrážok" });
-  const g = el("g", { class: "axis" });
-  for (let v = tlo; v <= thi + tStep / 2; v += tStep) {
-    g.append(el("line", { class: "gridline", x1: m.l, x2: W - m.r, y1: Yt(v), y2: Yt(v) }));
-    g.append(el("text", { x: m.l - 6, y: Yt(v) + 4, "text-anchor": "end" }, fmt(v, tStep < 1 ? 1 : 0)));
+/* Body grafu: teplota a nárazy priamo, zrážky ako súčet od tejto chvíle */
+function seriesPoints(m, kind, x0, now) {
+  if (kind === "zrazky") {
+    const pts = [];
+    let sum = 0;
+    m.cas.forEach((t, i) => {
+      const v = m.zrazky[i];
+      if (t <= now || v === null || v === undefined) return;
+      const okno = m.okno[i] || 1;
+      if (!pts.length) pts.push([now, 0]);
+      sum += v * okno * Math.min(1, (t - now) / (okno * 3600));
+      pts.push([t, sum]);
+    });
+    return pts;
   }
-  for (let v = 0; v <= rhi + rStep / 2; v += rStep) g.append(el("text", { x: W - m.r + 6, y: Yr(v) + 4 }, fmt(v, rStep < 1 ? 1 : 0)));
-  g.append(el("text", { x: m.l - 6, y: 12, "text-anchor": "end" }, "°C"));
-  g.append(el("text", { x: W - m.r + 6, y: 12 }, "mm/h"));
-  // polnoci a názvy dní
+  const arr = m[kind] || [];
+  return m.cas.map((t, i) => [t, arr[i]]).filter(([t, v]) => t >= x0 && v !== null && v !== undefined);
+}
+function valueAt(pts, T) {
+  if (!pts.length || T < pts[0][0] - 1 || T > pts[pts.length - 1][0] + 1) return null;
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i][0] >= T) {
+      const [ta, va] = pts[i - 1], [tb, vb] = pts[i];
+      if (tb - ta > 6 * 3600) return null;
+      return va + ((vb - va) * (T - ta)) / (tb - ta || 1);
+    }
+  }
+  return pts[0][1];
+}
+
+function drawStationForecast() {
+  const box = $("#fcChart"), tip = $("#fcChartTip"), noteEl = $("#fcChartNote");
+  if (!box || !fcSt || fcSt.id !== state.selected) return;
+  const kind = state.fcChart, K = FC_ST_KINDS[kind], s = fcSt.s, now = Date.now() / 1000;
+  const x0 = Math.floor(now / 3600) * 3600 - 2 * 3600;
+  const order = ["ecmwf", "icon", "aladin"];
+  const lines = fcSt.series.map((m) => ({ key: m.key, pts: seriesPoints(m, kind, x0, now) }))
+    .filter((m) => m.pts.length > 1)
+    .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+  const notes = [];
+  const have = new Set(fcSt.series.map((m) => m.key));
+  if (have.has("aladin")) notes.push("ALADIN (SHMÚ, sieť 4,5 km) je najbližší bod modelu.");
+  if (have.has("icon") || have.has("ecmwf")) notes.push(`ICON-EU (DWD, 7 km) a ECMWF IFS (9 km) sú z Open-Meteo${s.vyska ? ", teplota prepočítaná na výšku stanice" : ""}.`);
+  if (fcSt.omChyba) notes.push("ICON-EU a ECMWF sa teraz nepodarilo načítať z Open-Meteo.");
+  if (kind === "zrazky") notes.push("Krivka ukazuje, koľko zrážok spolu napadne od teraz do daného času.");
+  if (kind === "t" && s.vyska && s.vyska > 900 && have.has("aladin")) notes.push("ALADIN má vyhladený terén, na horskej stanici býva teplejší než skutočnosť.");
+  noteEl.textContent = notes.join(" ");
+  if (!lines.length) {
+    box.innerHTML = `<div class="empty">Pre túto veličinu nie sú dáta.</div>`;
+    tip.innerHTML = "";
+    return;
+  }
+
+  const W = Math.max(300, Math.round(box.clientWidth || 600)), H = W < 500 ? 190 : 220, m = { l: 36, r: 12, t: 20, b: 24 };
+  const x1 = Math.max(...lines.map((ln) => ln.pts[ln.pts.length - 1][0]));
+  const all = lines.flatMap((ln) => ln.pts.map((p) => p[1]));
+  let lo = Math.min(...all), hi = Math.max(...all), yStep;
+  if (kind === "t") {
+    yStep = niceStep(Math.max(2, hi - lo), 4);
+    lo = Math.floor(lo / yStep) * yStep; hi = Math.ceil(hi / yStep) * yStep;
+  } else {
+    const top = Math.max(kind === "zrazky" ? 2 : 6, hi);
+    yStep = niceStep(top, 4); lo = 0; hi = Math.ceil(top / yStep) * yStep;
+  }
+  if (hi <= lo) hi = lo + yStep;
+  const X = (t) => m.l + ((t - x0) / (x1 - x0)) * (W - m.l - m.r);
+  const Y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `Predpoveď: ${K.label}, porovnanie modelov` });
+  const g = el("g", { class: "axis" });
+  for (let v = lo; v <= hi + yStep / 2; v += yStep) {
+    g.append(el("line", { class: "gridline", x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }));
+    g.append(el("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }, fmt(v, yStep < 1 ? 1 : 0)));
+  }
+  g.append(el("text", { x: m.l - 6, y: 10, "text-anchor": "end" }, K.unit));
   const day = new Date(x0 * 1000); day.setHours(24, 0, 0, 0);
   let dayStart = x0;
-  for (let t = day.getTime() / 1000; t <= x1 + 1; t += 86400) {
+  // popis dňa podľa miesta: „št 15. 10.“, „št 15.“ alebo len „št“
+  const dayPx = ((W - m.l - m.r) * 86400) / (x1 - x0);
+  const dayFmt = dayPx > 110 ? { weekday: "short", day: "numeric", month: "numeric" } : dayPx > 56 ? { weekday: "short", day: "numeric" } : { weekday: "short" };
+  const labelDay = (a, b) => {
+    const txt = new Date(((a + b) / 2) * 1000).toLocaleDateString(LOCALE, dayFmt);
+    if (X(b) - X(a) < txt.length * 6.8 + 8) return;
+    g.append(el("text", { x: (X(a) + X(b)) / 2, y: H - 7, "text-anchor": "middle" }, txt));
+  };
+  for (; day.getTime() / 1000 <= x1 + 1; day.setDate(day.getDate() + 1)) {
+    const t = day.getTime() / 1000;
     g.append(el("line", { class: "gridline", x1: X(t), x2: X(t), y1: m.t - 4, y2: H - m.b }));
     labelDay(dayStart, t);
     dayStart = t;
   }
   labelDay(dayStart, x1);
-  function labelDay(a, b) {
-    if (X(b) - X(a) < 44) return;
-    const txt = new Date(((a + b) / 2) * 1000).toLocaleDateString(LOCALE, { weekday: "short", day: "numeric", month: "numeric" });
-    g.append(el("text", { x: (X(a) + X(b)) / 2, y: H - 7, "text-anchor": "middle" }, txt));
-  }
   svg.append(g);
-  r.zrazky.forEach((v, i) => {
-    if (!v || v < 0.05) return;
-    const okno = r.okno[i] || 1, xa = X(times[i] - okno * 3600), xb = X(times[i]);
-    svg.append(el("rect", { x: xa + 0.5, y: Yr(v), width: Math.max(1, xb - xa - 1), height: Yr(0) - Yr(v), fill: "var(--c-rain)", opacity: 0.75 }));
-  });
-  let dStr = "";
-  r.t.forEach((v, i) => { if (v !== null) dStr += `${dStr ? "L" : "M"}${X(times[i]).toFixed(1)} ${Yt(v).toFixed(1)} `; });
-  svg.append(el("path", { d: dStr, fill: "none", stroke: "var(--c-temp)", "stroke-width": 2, "stroke-linejoin": "round" }));
-  const now = Date.now() / 1000;
-  if (now > x0 && now < x1) {
-    svg.append(el("line", { x1: X(now), x2: X(now), y1: m.t - 4, y2: H - m.b, stroke: "var(--accent)", "stroke-width": 1.2 }));
-    svg.append(el("text", { x: X(now) + 4, y: m.t - 8, fill: "var(--accent)", style: "font-size:11px" }, "teraz"));
+  if (kind !== "t" || (lo < 0 && hi > 0)) {
+    svg.append(el("line", { x1: m.l, x2: W - m.r, y1: Y(Math.max(lo, 0)), y2: Y(Math.max(lo, 0)), stroke: "var(--muted)", "stroke-width": 1, opacity: 0.6 }));
+  }
+  svg.append(el("line", { x1: X(now), x2: X(now), y1: m.t - 4, y2: H - m.b, stroke: "var(--muted)", "stroke-width": 1.2 }));
+  svg.append(el("text", { x: X(now) + 4, y: m.t - 8, fill: "var(--muted)", style: "font-size:11px" }, "teraz"));
+  for (const ln of lines) {
+    let d = "";
+    ln.pts.forEach(([t, v], i) => { d += `${i ? "L" : "M"}${X(t).toFixed(1)} ${Y(v).toFixed(1)} `; });
+    svg.append(el("path", { d, fill: "none", stroke: FC_ST_MODELS[ln.key].color, "stroke-width": ln.key === "aladin" ? 2.2 : 1.8, "stroke-linejoin": "round", "stroke-linecap": "round" }));
   }
   const cursor = el("line", { class: "cursor", y1: m.t, y2: H - m.b, visibility: "hidden" });
   svg.append(cursor);
-  const show = (i) => {
-    if (i === null) {
-      tip.innerHTML = `<span><span class="sw" style="background:var(--c-temp)"></span>Teplota</span><span><span class="sw" style="background:var(--c-rain)"></span>Zrážky</span>`;
-      return;
+  const dots = lines.map((ln) => {
+    const c = el("circle", { r: 3.5, fill: FC_ST_MODELS[ln.key].color, stroke: "var(--surface)", "stroke-width": 1.5, visibility: "hidden" });
+    svg.append(c);
+    return c;
+  });
+
+  const sw = (key) => `<span class="sw" style="background:${FC_ST_MODELS[key].color}"></span>${FC_ST_MODELS[key].label}`;
+  const summary = () => {
+    const parts = [`<span class="when muted">${kind === "zrazky" ? "Súčet zrážok od teraz" : "Najbližších 24 hodín"}</span>`];
+    for (const ln of [...lines].reverse()) {
+      let txt;
+      if (kind === "zrazky") {
+        const a = valueAt(ln.pts, now + 86400), b = valueAt(ln.pts, now + 3 * 86400);
+        txt = `24 h <b class="num">${fmt(a, 1)}</b> · 3 dni <b class="num">${fmt(b, 1)}</b> mm`;
+      } else {
+        const v = ln.pts.filter(([t]) => t > now && t <= now + 86400).map((p) => p[1]);
+        if (!v.length) txt = "—";
+        else if (kind === "t") txt = `<b class="num">${fmt(Math.min(...v), 0)}</b> až <b class="num">${fmt(Math.max(...v), 0)}</b> °C`;
+        else txt = `max <b class="num">${fmt(Math.max(...v), 0)}</b> m/s`;
+      }
+      parts.push(`<span class="mdl">${sw(ln.key)} ${txt}</span>`);
     }
-    const parts = [`<span class="muted num">${longTime(times[i])}</span>`, `<span><b class="num">${fmt(r.t[i])}</b> °C</span>`];
-    if (r.zrazky[i] !== null) parts.push(`<span><b class="num">${fmt(r.zrazky[i], 1)}</b> mm/h</span>`);
-    if (r.naraz[i] !== null) parts.push(`<span>nárazy <b class="num">${fmt(r.naraz[i], 0)}</b> m/s</span>`);
-    if (r.oblacnost[i] !== null) parts.push(`<span>oblačnosť <b class="num">${fmt(r.oblacnost[i], 0)}</b> %</span>`);
     tip.innerHTML = parts.join("");
   };
-  show(null);
+  const showAt = (T) => {
+    const parts = [`<span class="when muted num">${longTime(T)}</span>`];
+    cursor.setAttribute("x1", X(T)); cursor.setAttribute("x2", X(T)); cursor.setAttribute("visibility", "visible");
+    lines.forEach((ln, q) => {
+      const v = valueAt(ln.pts, T);
+      if (v === null) { dots[q].setAttribute("visibility", "hidden"); return; }
+      dots[q].setAttribute("cx", X(T)); dots[q].setAttribute("cy", Y(v)); dots[q].setAttribute("visibility", "visible");
+    });
+    for (const ln of [...lines].reverse()) {
+      const v = valueAt(ln.pts, T);
+      parts.push(`<span class="mdl">${sw(ln.key)} ${kind === "zrazky" ? "spolu " : ""}<b class="num">${fmt(v, K.digits)}</b> ${K.unit}</span>`);
+    }
+    tip.innerHTML = parts.join("");
+  };
+  summary();
   svg.addEventListener("pointermove", (e) => {
     const rect = svg.getBoundingClientRect();
-    const t = x0 + ((((e.clientX - rect.left) / rect.width) * W - m.l) / (W - m.l - m.r)) * (x1 - x0);
-    let best = 0;
-    for (let i = 1; i < times.length; i++) if (Math.abs(times[i] - t) < Math.abs(times[best] - t)) best = i;
-    cursor.setAttribute("x1", X(times[best])); cursor.setAttribute("x2", X(times[best])); cursor.setAttribute("visibility", "visible");
-    show(best);
+    let T = x0 + ((((e.clientX - rect.left) / rect.width) * W - m.l) / (W - m.l - m.r)) * (x1 - x0);
+    T = Math.min(x1, Math.max(kind === "zrazky" ? now : x0, Math.round(T / 3600) * 3600));
+    showAt(T);
   });
-  svg.addEventListener("pointerleave", () => { cursor.setAttribute("visibility", "hidden"); show(null); });
+  svg.addEventListener("pointerleave", () => {
+    cursor.setAttribute("visibility", "hidden");
+    dots.forEach((c) => c.setAttribute("visibility", "hidden"));
+    summary();
+  });
   box.replaceChildren(svg);
-  const notes = ["Najbližší bod modelu so sieťou 4,5 km."];
-  if (s.vyska && s.vyska > 900) notes.push("Model terén vyhladzuje, na horskej stanici môže byť skutočná teplota nižšia.");
-  $("#fcChartNote").textContent = notes.join(" ");
 }
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawForecast());
 

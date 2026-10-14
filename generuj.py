@@ -39,6 +39,18 @@ KEEP_BINS = 25 * 3600         # 10-minútové súhrny: posledných 25 hodín
 MAX_FILES_PER_RUN = 72        # strop sťahovania, keby GitHub dlho nespúšťal
 WU_RUNS_PER_DAY = 144
 FORECAST_FORMAT = 2           # zvýšiť pri zmene tvaru uložených polí predpovede (vynúti nové spracovanie)
+
+# ICON-EU (DWD) cez Open-Meteo: mriežka bodov nad Slovenskom
+OPEN_METEO = os.environ.get("OPEN_METEO_URL", "https://api.open-meteo.com")
+ICON_KROK = 0.125             # stupne; natívna mriežka ICON-EU je 0,0625°, každý druhý bod stačí a šetrí limit
+ICON_LAT0, ICON_LON0 = 47.625, 16.75
+ICON_LAT1, ICON_LON1 = 49.75, 22.625
+ICON_DAVKA = 100              # bodov v jednej požiadavke
+ICON_PREMENNE = {             # Open-Meteo → pole na stránke
+    "temperature_2m": "t", "precipitation": "zrazky", "cloud_cover": "oblacnost",
+    "wind_speed_10m": "vietor", "wind_gusts_10m": "naraz", "pressure_msl": "tlak",
+}
+ICON_FORMAT = 1
 WU_BUDGET = 1200
 
 
@@ -325,6 +337,128 @@ def update_forecast(shmu: srv.Shmu, folder: Path, state: dict) -> dict:
 
 
 # --------------------------------------------------------------------------
+# ICON-EU z Open-Meteo
+# --------------------------------------------------------------------------
+
+def _inside(ring, lon, lat) -> bool:
+    c = False
+    for k in range(len(ring)):
+        x1, y1 = ring[k]
+        x2, y2 = ring[k - 1]
+        if (y1 > lat) != (y2 > lat) and lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
+            c = not c
+    return c
+
+
+def icon_grid() -> dict:
+    """Pravidelná mriežka zarovnaná s ICON-EU; aktívne sú body nad Slovenskom a ich susedia."""
+    rings = load(srv.STATIC_DIR / "slovensko.json", {}).get("obrys", [])
+    nx = int(round((ICON_LON1 - ICON_LON0) / ICON_KROK)) + 1
+    ny = int(round((ICON_LAT1 - ICON_LAT0) / ICON_KROK)) + 1
+    active = set()
+    for j in range(ny):
+        for i in range(nx):
+            lat, lon = ICON_LAT0 + j * ICON_KROK, ICON_LON0 + i * ICON_KROK
+            if any(_inside(r, lon, lat) for r in rings):
+                for dj in (-1, 0, 1):
+                    for di in (-1, 0, 1):
+                        if 0 <= i + di < nx and 0 <= j + dj < ny:
+                            active.add((j + dj) * nx + i + di)
+    return {"typ": "latlon", "nx": nx, "ny": ny, "lat0": ICON_LAT0, "lon0": ICON_LON0,
+            "dlat": ICON_KROK, "dlon": ICON_KROK, "aktivne": sorted(active)}
+
+
+def _get_json(url: str, tries: int = 2):
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+    last = None
+    for attempt in range(tries):
+        try:
+            with urlopen(Request(url, headers={"User-Agent": srv.USER_AGENT}), timeout=60) as resp:
+                return json.loads(resp.read())
+        except HTTPError as err:
+            last = err
+            if err.code == 429 and attempt + 1 < tries:
+                time.sleep(30)
+                continue
+            if err.code < 500:
+                break
+        except Exception as err:  # sieť
+            last = err
+        time.sleep(3)
+    raise ConnectionError(f"Open-Meteo: {last}")
+
+
+def update_icon(folder: Path, state: dict) -> dict:
+    status = {"stav": "ok", "chyba": None, "poslednaKontrola": int(time.time())}
+    have = (folder / "predpoved.json").exists() and all((folder / f"predpoved-{n}.json").exists() for n in srv.FORECAST_FIELDS)
+    try:
+        meta = _get_json(f"{OPEN_METEO}/data/dwd_icon_eu/static/meta.json")
+        init = int(meta["last_run_initialisation_time"])
+    except Exception as err:
+        meta, init = None, None
+        status["chyba"] = f"Čas behu ICON sa nepodarilo zistiť: {err}"
+    now = time.time()
+    last = state.get("stiahnute", 0)
+    fresh_run = init is not None and init != state.get("beh") and datetime.fromtimestamp(init, timezone.utc).hour % 6 == 0
+    stale = now - last > 7 * 3600
+    if have and state.get("format") == ICON_FORMAT and not fresh_run and not stale:
+        log("ICON: beh sa nezmenil.")
+        return status
+    grid = icon_grid()
+    act = grid["aktivne"]
+    pts = [(grid["lat0"] + (k // grid["nx"]) * grid["dlat"], grid["lon0"] + (k % grid["nx"]) * grid["dlon"]) for k in act]
+    hourly = ",".join(ICON_PREMENNE)
+    series = []
+    try:
+        for b in range(0, len(pts), ICON_DAVKA):
+            chunk = pts[b:b + ICON_DAVKA]
+            url = (f"{OPEN_METEO}/v1/forecast?latitude={','.join(f'{la:.4f}' for la, _ in chunk)}"
+                   f"&longitude={','.join(f'{lo:.4f}' for _, lo in chunk)}&hourly={hourly}&models=icon_eu"
+                   f"&elevation={','.join(['nan'] * len(chunk))}"  # bez prepočtu na výšku terénu: hodnoty modelu
+                   f"&wind_speed_unit=ms&forecast_hours=121&timeformat=unixtime&cell_selection=nearest")
+            doc = _get_json(url)
+            series.extend(doc if isinstance(doc, list) else [doc])
+            time.sleep(1)
+    except Exception as err:
+        status.update(stav="chyba", chyba=str(err))
+        log(f"ICON: {err}")
+        return status
+    if len(series) != len(pts):
+        status.update(stav="chyba", chyba="Open-Meteo vrátil iný počet bodov, než sa pýtalo.")
+        return status
+    times = series[0]["hourly"]["time"]
+    idx = list(range(min(72, len(times)))) + list(range(74, len(times), 3))
+    run = init if init is not None else int(times[0]) // 21600 * 21600
+    kroky = [{"h": int(round((times[i] - run) / 3600)), "cas": int(times[i]), "okno": 1 if i < 72 else 3} for i in idx]
+
+    def value(h: dict, var: str, i: int):
+        arr = h.get(var) or []
+        if var == "precipitation" and i >= 72:
+            part = [arr[q] for q in range(i - 2, i + 1) if 0 <= q < len(arr) and arr[q] is not None]
+            return sum(part) / 3 if part else None
+        return arr[i] if i < len(arr) else None
+
+    for var, name in ICON_PREMENNE.items():
+        mul = 100 if name == "zrazky" else 10
+        steps = []
+        for i in idx:
+            row = []
+            for loc in series:
+                v = value(loc["hourly"], var, i)
+                row.append(None if v is None else round(v * mul))
+            steps.append(row if any(v is not None for v in row) else None)
+        dump(folder / f"predpoved-{name}.json", {"pole": name, "jednotka": srv.FORECAST_FIELDS[name][0], "nasobok": mul, "hodnoty": steps})
+    dump(folder / "predpoved.json", {
+        "model": "ICON-EU", "zdroj": "DWD cez Open-Meteo", "beh": run, "kroky": kroky,
+        "polia": {k: {"jednotka": u, "nazov": n} for k, (u, n) in srv.FORECAST_FIELDS.items()},
+        "mriezka": grid})
+    state.update(beh=run, stiahnute=int(now), format=ICON_FORMAT, bodov=len(pts))
+    log(f"ICON: {len(pts)} bodov, {len(kroky)} krokov, beh {datetime.fromtimestamp(run, timezone.utc):%d.%m. %H UTC}.")
+    return status
+
+
+# --------------------------------------------------------------------------
 # Weather Underground
 # --------------------------------------------------------------------------
 
@@ -408,6 +542,7 @@ def main() -> None:
     ap.add_argument("--vystup", default="_site", help="kam zapísať stránku")
     ap.add_argument("--zdroj", default=os.environ.get("SHMU_BASE_URL", "https://opendata.shmu.sk"), help=argparse.SUPPRESS)
     ap.add_argument("--bez-predpovede", action="store_true")
+    ap.add_argument("--bez-icon", action="store_true", help="nesťahovať mapu ICON z Open-Meteo")
     args = ap.parse_args()
 
     stav_dir, out = Path(args.stav), Path(args.vystup)
@@ -422,6 +557,12 @@ def main() -> None:
     fc_state = state.get("predpoved", {})
     fc_status = {"stav": "vypnute"} if args.bez_predpovede else update_forecast(shmu, stav_dir, fc_state)
     fcf = ForecastFiles(stav_dir)
+    icon_state = state.get("icon", {})
+    icon_dir = stav_dir / "icon"
+    icon_status = {"stav": "vypnute"}
+    if not args.bez_predpovede and not args.bez_icon:
+        icon_dir.mkdir(parents=True, exist_ok=True)
+        icon_status = update_icon(icon_dir, icon_state)
 
     stations, newest = obs.current(catalog)
     fresh = [s for s in stations if s["lat"] is not None and "t" in s["hodnoty"]]
@@ -491,8 +632,16 @@ def main() -> None:
         dump(data / "predpoved-body.json", points)
     else:
         dump(data / "predpoved.json", {"stav": fc_status, "kroky": [], "beh": None})
+    icon_meta = load(icon_dir / "predpoved.json", None)
+    if icon_meta and icon_meta.get("kroky"):
+        icon_meta["stav"] = icon_status
+        dump(data / "icon" / "predpoved.json", icon_meta)
+        for name in srv.FORECAST_FIELDS:
+            src = icon_dir / f"predpoved-{name}.json"
+            if src.exists():
+                shutil.copyfile(src, data / "icon" / f"predpoved-{name}.json")
 
-    state = {"verzia": 1, "merania": obs.to_state(files), "predpoved": fc_state, "wu": wu_state}
+    state = {"verzia": 1, "merania": obs.to_state(files), "predpoved": fc_state, "icon": icon_state, "wu": wu_state}
     dump(stav_dir / "stav.json.gz", state, gz=True)
     log(f"Hotovo: {len(stations)} staníc SHMÚ, {len(amateurs)} amatérskych, "
         f"najnovšie meranie {datetime.fromtimestamp(newest, timezone.utc).strftime('%H:%M UTC') if newest else '—'}.")
