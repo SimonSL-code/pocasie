@@ -200,7 +200,8 @@ class Observations:
             meta = catalog.get(sid, {})
             out.append({
                 "id": sid, "nazov": meta.get("nazov"), "lat": meta.get("lat"), "lon": meta.get("lon"),
-                "vyska": meta.get("vyska"), "cas": last_ts, "hodnoty": latest,
+                "vyska": meta.get("vyska"), "vyskaTlak": meta.get("vyskaTlak"), "vyskaZdroj": meta.get("vyskaZdroj"),
+                "cas": last_ts, "hodnoty": latest,
                 "zmenaTeploty1h": None if t_hour is None or "t" not in latest else round(latest["t"] - t_hour, 1),
                 "tMin24": min(tmins) if tmins else None, "tMax24": max(tmaxs) if tmaxs else None,
                 "zrazky1h": {"mm": round(sum(r1), 2), "pokrytie": round(min(len(r1) / 60, 1), 2)} if r1 else None,
@@ -225,7 +226,7 @@ class Observations:
             cols["zrazkyMinut"].append(b[B_RAIN_N])
             cols["ziarenie"].append(b[B_SOL])
         meta = catalog.get(sid, {})
-        return {"id": sid, "nazov": meta.get("nazov"), "vyska": meta.get("vyska"),
+        return {"id": sid, "nazov": meta.get("nazov"), "vyska": meta.get("vyska"), "vyskaTlak": meta.get("vyskaTlak"),
                 "lat": meta.get("lat"), "lon": meta.get("lon"), "rady": cols}
 
 

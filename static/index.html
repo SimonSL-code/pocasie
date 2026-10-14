@@ -115,8 +115,17 @@ h1 {
 h2 { margin: 0; font-family: var(--font-display); font-stretch: 85%; font-weight: 700; font-size: 20px; line-height: 1.2; text-wrap: balance; }
 
 /* Mapa */
-.map-box { position: relative; }
+.map-wrap { position: relative; border-radius: 8px; overflow: hidden; }
+.map-box { position: relative; touch-action: pan-y; cursor: default; user-select: none; -webkit-user-select: none; }
+.map-box.zoomed { touch-action: none; cursor: grab; }
+.map-box.dragging { cursor: grabbing; }
 .map-box svg { display: block; width: 100%; height: auto; }
+.map-ctrl { position: absolute; top: 8px; right: 8px; display: grid; gap: 4px; }
+.map-ctrl button { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 19px; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgb(0 0 0 / .12); padding: 0; }
+.map-ctrl button:hover:not(:disabled) { border-color: var(--accent); }
+.map-ctrl button:disabled { opacity: .4; cursor: default; }
+.map-ctrl svg { width: 15px; height: 15px; }
+.map-hint { margin-left: auto; font-size: 12px; color: var(--muted); text-align: right; }
 .map-land { fill: var(--sunken); stroke: none; }
 .map-border { fill: none; stroke: var(--muted); stroke-width: 1.1; stroke-linejoin: round; opacity: .55; }
 .map-st { cursor: pointer; }
@@ -124,7 +133,10 @@ h2 { margin: 0; font-family: var(--font-display); font-stretch: 85%; font-weight
 .map-st.sel circle.ring { fill: none; stroke: var(--ink); stroke-width: 1.6; }
 .map-label { font-family: var(--font-data); font-weight: 600; fill: var(--ink); paint-order: stroke; stroke: var(--surface); stroke-width: 3.5px; stroke-linejoin: round; }
 .map-label.sel { fill: var(--accent); }
-.legend { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.map-city { font-family: var(--font-body); font-style: italic; fill: var(--muted); paint-order: stroke; stroke: var(--sunken); stroke-width: 3px; stroke-linejoin: round; }
+.map-city-dot { fill: none; stroke: var(--muted); stroke-width: 1.2; }
+@media (max-width: 520px) { .map-ctrl { top: 6px; right: 6px; gap: 3px; } .map-ctrl button { width: 28px; height: 28px; font-size: 17px; } }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
 .legend .bar { height: 8px; flex: 1 1 120px; max-width: 280px; border-radius: 4px; }
 .map-tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12.5px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -130%); }
 
@@ -283,8 +295,15 @@ footer a { color: inherit; }
           <h2 id="mapTitle">Teplota vzduchu na staniciach</h2>
           <span class="muted" id="mapCaption" style="font-size:13px"></span>
         </div>
-        <div class="map-box" id="mapBox"></div>
-        <div class="legend"><span class="num">−20 °C</span><span class="bar" id="legendBar"></span><span class="num">40 °C</span></div>
+        <div class="map-wrap">
+          <div class="map-box" id="mapBox"></div>
+          <div class="map-ctrl" role="group" aria-label="Priblíženie mapy">
+            <button type="button" id="mapIn" aria-label="Priblížiť" title="Priblížiť">+</button>
+            <button type="button" id="mapOut" aria-label="Oddialiť" title="Oddialiť">−</button>
+            <button type="button" id="mapAll" aria-label="Celé Slovensko" title="Celé Slovensko" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+        </div>
+        <div class="legend"><span class="num">−20 °C</span><span class="bar" id="legendBar"></span><span class="num">40 °C</span><span class="map-hint" id="mapHint"></span></div>
         <div class="map-tools" id="mapTools" hidden>
           <span class="sym"><svg viewBox="-6 -6 12 12" aria-hidden="true"><circle r="5" fill="currentColor"/></svg>SHMÚ</span>
           <span class="sym"><svg viewBox="-6 -6 12 12" aria-hidden="true"><rect x="-3.6" y="-3.6" width="7.2" height="7.2" transform="rotate(45)" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>amatérske (Weather Underground)</span>
@@ -499,6 +518,22 @@ function dewPoint(t, rh) {
   const a = 17.62, b = 243.12, g = Math.log(rh / 100) + (a * t) / (b + t);
   return (b * g) / (a - g);
 }
+/* Tlak prepočítaný na hladinu mora: redukčný vzorec DWD (výška tlakomera, teplota a vlhkosť vzduchu).
+   Pri vysokohorských staniciach by bol výsledok nespoľahlivý, preto ich neprepočítavame. */
+const MSL_MAX_H = 1500;
+const baroHeight = (s) => (s && (s.vyskaTlak ?? s.vyska)) ?? null;
+function seaLevelPressure(p, h, t, rh) {
+  if (p === null || p === undefined || h === null || h === undefined || t === null || t === undefined || h > MSL_MAX_H) return null;
+  const e = rh === null || rh === undefined ? 0 : (rh / 100) * 6.112 * Math.exp((17.62 * t) / (243.12 + t));
+  return p * Math.exp(((9.80665 / 287.05) * h) / (t + 273.15 + 0.12 * e + (0.0065 * h) / 2));
+}
+// tlak na hladine mora pre tabuľku a detail; amatérske stanice ho už posielajú prepočítaný
+function mslp(s) {
+  const v = s.hodnoty;
+  if (isWu(s)) return v.tlak ?? null;
+  return seaLevelPressure(v.tlak, baroHeight(s), v.t, v.vlh_rel);
+}
+const isHighStation = (s) => !isWu(s) && baroHeight(s) !== null && baroHeight(s) > MSL_MAX_H;
 const stName = (s) => s.nazov || `Stanica č. ${s.id}`;
 function visibility(m) {
   if (m === null || m === undefined) return ["—", ""];
@@ -688,16 +723,34 @@ MAP.scale = MAP.w / ((MAP.lon1 - MAP.lon0) * MAP.kx);
 MAP.h = Math.round((MAP.lat1 - MAP.lat0) * MAP.scale);
 const proj = (lon, lat) => [(lon - MAP.lon0) * MAP.kx * MAP.scale, (MAP.lat1 - lat) * MAP.scale];
 
+/* Priblíženie mapy staníc: state.mapView = null (celé Slovensko) alebo { lon, lat, z } so stredom a násobkom priblíženia */
+const MAP_ZMAX = 10, OWN_ZOOM = 7;
+function mapViewOf(v) {
+  if (!v) return { lon0: MAP.lon0, lat1: MAP.lat1, scale: MAP.scale, z: 1 };
+  const scale = MAP.scale * v.z;
+  return { lon0: v.lon - MAP.w / 2 / (MAP.kx * scale), lat1: v.lat + MAP.h / 2 / scale, scale, z: v.z };
+}
+function clampView(v) {
+  if (!v) return null;
+  const z = Math.min(MAP_ZMAX, Math.max(1, v.z));
+  if (z < 1.02) return null;
+  const hw = (MAP.lon1 - MAP.lon0) / z / 2, hh = (MAP.lat1 - MAP.lat0) / z / 2;
+  return { z, lon: Math.min(MAP.lon1 - hw, Math.max(MAP.lon0 + hw, v.lon)), lat: Math.min(MAP.lat1 - hh, Math.max(MAP.lat0 + hh, v.lat)) };
+}
+// skrátený názov do popisu na priblíženej mape
+const shortName = (s) => { const n = stName(s).split(/ - |\(| \//)[0].trim(); return n.length > 16 ? `${n.slice(0, 15)}…` : n; };
+
 function renderMap() {
   if (!state.data) return;
   const box = $("#mapBox");
   const own = amateurs().find((x) => x.vlastna);
-  const zoomed = !!(state.mapZoom && own && state.showWu && own.lat);
-  const Z = 7;
-  const view = zoomed
-    ? { lon0: own.lon - (MAP.lon1 - MAP.lon0) / Z / 2, lat1: own.lat + (MAP.lat1 - MAP.lat0) / Z / 2, scale: MAP.scale * Z }
-    : { lon0: MAP.lon0, lat1: MAP.lat1, scale: MAP.scale };
+  if (!state.mapInit) {
+    state.mapInit = true;
+    if (state.mapZoom && own && own.lat && state.showWu) state.mapView = clampView({ lon: own.lon, lat: own.lat, z: OWN_ZOOM });
+  }
+  const view = mapViewOf(state.mapView), zoomed = !!state.mapView;
   const P = (lon, lat) => [(lon - view.lon0) * MAP.kx * view.scale, (view.lat1 - lat) * view.scale];
+  const named = view.z >= 3;
   const svg = el("svg", { viewBox: `0 0 ${MAP.w} ${MAP.h}`, role: "img", "aria-label": "Mapa Slovenska s teplotou na staniciach" });
   const defs = el("defs");
   const clip = el("clipPath", { id: "mapClip" });
@@ -726,7 +779,7 @@ function renderMap() {
   // vybraná stanica sa kreslí ako posledná; popisy dostane najprv ona, potom synoptické stanice
   located.sort((a, b) => (a.id === state.selected) - (b.id === state.selected));
   const placed = [];
-  const rank = (s) => (s.id === state.selected ? 0 : isWu(s) ? (s.vlastna ? 1 : isSuspect(s) ? 9 : 3) : s.vyska ? 1 : 2);
+  const rank = (s) => (s.id === state.selected ? 0 : isWu(s) ? (s.vlastna ? 1 : isSuspect(s) ? 9 : 3) : s.hodnoty.tlak !== undefined ? 1 : 2);
   const order = [...located].sort((a, b) => rank(a) - rank(b));
   const labels = new Map();
   // najprv obsadíme miesto všetkými bodkami, aby na ne žiadny popis nezasahoval
@@ -738,7 +791,7 @@ function renderMap() {
   for (const s of order) {
     if (s.hodnoty.t === undefined || isSuspect(s)) continue;
     const [x, y] = P(s.lon, s.lat);
-    const txt = `${fmt(s.hodnoty.t)}°`;
+    const txt = `${fmt(s.hodnoty.t)}°${named ? ` ${shortName(s)}` : ""}`;
     const w = txt.length * fs * 0.62, h = fs + 2;
     const candidates = [[x + rr + 3, y + fs * 0.35], [x - rr - 3 - w, y + fs * 0.35], [x - w / 2, y - rr - 3], [x - w / 2, y + rr + fs + 1]];
     for (const [lx, ly] of candidates) {
@@ -746,6 +799,22 @@ function renderMap() {
       const hit = placed.some((p) => r.x < p.x + p.w && r.x + r.w > p.x && r.y < p.y + p.h && r.y + r.h > p.y);
       if (!hit && lx > 0 && lx + w < MAP.w && r.y > 0 && ly < MAP.h) { placed.push(r); labels.set(s.id, [lx, ly, txt]); break; }
     }
+  }
+  // na priblíženej mape pomôžu s orientáciou mestá (len tam, kde nezavadzajú popisom staníc)
+  if (view.z >= 1.8) {
+    const cityLayer = el("g", { "aria-hidden": "true", style: "pointer-events:none" });
+    const cfs = fs * 0.95;
+    for (const [name, lat, lon] of FC_CITIES) {
+      const [x, y] = P(lon, lat);
+      if (x < 4 || x > MAP.w - 4 || y < 4 || y > MAP.h - 4) continue;
+      const w = name.length * cfs * 0.56, r = { x: x - w / 2, y: y + 3, w, h: cfs + 2 };
+      if (r.x < 0 || r.x + r.w > MAP.w || r.y + r.h > MAP.h) continue;
+      if (placed.some((q) => r.x < q.x + q.w && r.x + r.w > q.x && r.y < q.y + q.h && r.y + r.h > q.y)) continue;
+      placed.push(r);
+      cityLayer.append(el("rect", { class: "map-city-dot", x: x - 2.5, y: y - 2.5, width: 5, height: 5 }));
+      cityLayer.append(el("text", { class: "map-city", x, y: y + cfs + 2, "text-anchor": "middle", style: `font-size:${cfs.toFixed(1)}px` }, name));
+    }
+    g.append(cityLayer);
   }
   const labelLayer = el("g", { "aria-hidden": "true", style: "pointer-events:none" });
   for (const s of located) {
@@ -773,15 +842,99 @@ function renderMap() {
   box.replaceChildren(svg);
   const total = freshStations().length;
   const shmuOnMap = located.filter((s) => !isWu(s)).length, wuOnMap = located.length - shmuOnMap;
+  const nStanic = (n) => `${n} ${n === 1 ? "stanica" : n >= 2 && n <= 4 ? "stanice" : "staníc"}`;
+  const nAmat = (n) => `${n} ${n === 1 ? "amatérska" : n >= 2 && n <= 4 ? "amatérske" : "amatérskych"}`;
   $("#mapCaption").textContent = zoomed
-    ? `Okolie stanice ${own.nazov} · ${shmuOnMap} staníc SHMÚ · ${wuOnMap} amatérskych`
-    : `${shmuOnMap} staníc SHMÚ so známou polohou z ${total} meraných` + (wuOnMap ? ` · ${wuOnMap} amatérskych` : "");
+    ? `Priblížené ${fmt(view.z, 1)}× · vo výreze ${nStanic(shmuOnMap)} SHMÚ` + (wuOnMap ? ` · ${nAmat(wuOnMap)}` : "")
+    : `${shmuOnMap} staníc SHMÚ so známou polohou z ${total} meraných` + (wuOnMap ? ` · ${nAmat(wuOnMap)}` : "");
   $("#mapTools").hidden = amateurs().length === 0;
   $("#wuToggle").checked = state.showWu;
   const zb = $("#mapZoom");
   zb.hidden = !(own && state.showWu);
   zb.textContent = zoomed ? "Celé Slovensko" : "Priblížiť okolie mojej stanice";
   zb.setAttribute("aria-pressed", String(zoomed));
+  box.classList.toggle("zoomed", zoomed);
+  $("#mapAll").hidden = !zoomed;
+  $("#mapOut").disabled = !zoomed;
+  $("#mapIn").disabled = view.z >= MAP_ZMAX - 0.01;
+  $("#mapHint").textContent = matchMedia("(pointer: coarse)").matches
+    ? (zoomed ? "Posun prstom, priblíženie dvoma prstami." : "Priblížte tlačidlom + alebo dvoma prstami.")
+    : (zoomed ? "Ťahaním posuniete, kolieskom myši priblížite." : "Kolieskom myši priblížite.");
+}
+
+/* Ovládanie mapy: koliesko, ťahanie, dva prsty, dvojklik a tlačidlá */
+let mapRaf = 0;
+function scheduleMap() {
+  if (mapRaf) return;
+  mapRaf = requestAnimationFrame(() => { mapRaf = 0; hideTip(); renderMap(); });
+}
+function mapPoint(e) {
+  const r = $("#mapBox").getBoundingClientRect();
+  return [((e.clientX - r.left) / r.width) * MAP.w, ((e.clientY - r.top) / r.height) * MAP.h];
+}
+function zoomMapAt(factor, mx, my) {
+  const V = mapViewOf(state.mapView);
+  const lon = V.lon0 + mx / (MAP.kx * V.scale), lat = V.lat1 - my / V.scale;
+  const z = Math.min(MAP_ZMAX, Math.max(1, V.z * factor)), scale = MAP.scale * z;
+  state.mapView = clampView({ z, lon: lon - (mx - MAP.w / 2) / (MAP.kx * scale), lat: lat + (my - MAP.h / 2) / scale });
+  scheduleMap();
+}
+function panMap(dx, dy) {
+  if (!state.mapView) return;
+  const V = mapViewOf(state.mapView);
+  state.mapView = clampView({ z: V.z, lon: state.mapView.lon - dx / (MAP.kx * V.scale), lat: state.mapView.lat + dy / V.scale });
+  scheduleMap();
+}
+{
+  const box = $("#mapBox"), pts = new Map();
+  let start = null, moved = false, suppressClick = false;
+  box.addEventListener("wheel", (e) => {
+    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    if (!dy || (dy > 0 && !state.mapView)) return;   // úplne oddialená mapa: koliesko nadol posúva stránku
+    e.preventDefault();
+    const [mx, my] = mapPoint(e);
+    zoomMapAt(Math.exp(-Math.max(-300, Math.min(300, dy)) * 0.0022), mx, my);
+  }, { passive: false });
+  box.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    pts.set(e.pointerId, mapPoint(e));
+    if (pts.size === 1) { start = [e.clientX, e.clientY]; moved = false; }
+    if (pts.size === 2) { moved = true; for (const id of pts.keys()) { try { box.setPointerCapture(id); } catch { /* prst už zdvihnutý */ } } }
+  });
+  box.addEventListener("pointermove", (e) => {
+    if (!pts.has(e.pointerId)) return;
+    const p = mapPoint(e), prev = pts.get(e.pointerId);
+    if (pts.size >= 2) {
+      const other = [...pts.entries()].find(([id]) => id !== e.pointerId)[1];
+      const d0 = Math.hypot(prev[0] - other[0], prev[1] - other[1]), d1 = Math.hypot(p[0] - other[0], p[1] - other[1]);
+      const m0 = [(prev[0] + other[0]) / 2, (prev[1] + other[1]) / 2], m1 = [(p[0] + other[0]) / 2, (p[1] + other[1]) / 2];
+      pts.set(e.pointerId, p);
+      if (d0 > 2) { zoomMapAt(d1 / d0, m0[0], m0[1]); panMap(m1[0] - m0[0], m1[1] - m0[1]); }
+      return;
+    }
+    if (!state.mapView) return;
+    if (!moved) {
+      if (Math.hypot(e.clientX - start[0], e.clientY - start[1]) < 5) return;
+      moved = true;
+      box.classList.add("dragging");
+      try { box.setPointerCapture(e.pointerId); } catch { /* nič */ }
+    }
+    pts.set(e.pointerId, p);
+    panMap(p[0] - prev[0], p[1] - prev[1]);
+  });
+  const end = (e) => {
+    if (!pts.delete(e.pointerId)) return;
+    if (moved) suppressClick = true;
+    if (!pts.size) { box.classList.remove("dragging"); setTimeout(() => { suppressClick = false; }, 0); }
+  };
+  box.addEventListener("pointerup", end);
+  box.addEventListener("pointercancel", end);
+  // po ťahaní nevyberať stanicu, na ktorej sa prst alebo myš zastavili
+  box.addEventListener("click", (e) => { if (suppressClick) { e.stopPropagation(); e.preventDefault(); suppressClick = false; } }, true);
+  box.addEventListener("dblclick", (e) => { e.preventDefault(); const [mx, my] = mapPoint(e); zoomMapAt(2, mx, my); });
+  $("#mapIn").addEventListener("click", () => zoomMapAt(1.8, MAP.w / 2, MAP.h / 2));
+  $("#mapOut").addEventListener("click", () => zoomMapAt(1 / 1.8, MAP.w / 2, MAP.h / 2));
+  $("#mapAll").addEventListener("click", () => { state.mapView = null; state.mapZoom = false; store.set("pocasie.zoom", "0"); scheduleMap(); });
 }
 let tipEl = null;
 function showTip(s, x, y) {
@@ -803,7 +956,7 @@ const COLS = [
   { key: "vietor", label: "Vietor", get: (s) => s.hodnoty.vie_pr_rych },
   { key: "naraz", label: "Nárazy", get: (s) => s.hodnoty.vie_max_rych },
   { key: "zr", label: "Zrážky 1 h", get: (s) => s.zrazky1h ? s.zrazky1h.mm : null },
-  { key: "tlak", label: "Tlak", get: (s) => s.hodnoty.tlak },
+  { key: "tlak", label: "Tlak", get: (s) => mslp(s) },
 ];
 function renderTable() {
   const head = $("#thead");
@@ -850,7 +1003,7 @@ function renderTable() {
       <td class="num">${arrowSvg(v.vie_pr_smer)} ${fmt(v.vie_pr_rych)}</td>
       <td class="num">${fmt(v.vie_max_rych)}</td>
       <td class="num">${rain}</td>
-      <td class="num"${isWu(s) ? ' title="Tlak udávaný stanicou, väčšinou prepočítaný na hladinu mora"' : ""}>${fmt(v.tlak)}${isWu(s) && v.tlak !== undefined ? "*" : ""}</td>`;
+      <td class="num"${pressTitle(s)}>${fmt(mslp(s))}${isWu(s) && v.tlak !== undefined ? "*" : ""}</td>`;
     tr.addEventListener("click", () => select(s.id, true));
     tr.addEventListener("keydown", (e) => { if (e.key === "Enter") select(s.id, true); });
     frag.append(tr);
@@ -858,11 +1011,19 @@ function renderTable() {
   body.replaceChildren(frag);
   const unnamed = state.data.stanice.filter((s) => !s.nazov).length;
   const nWu = state.showWu ? amateurs().length : 0;
-  $("#tableNote").textContent = `Zobrazených ${rows.length} z ${state.data.stanice.length + nWu} staníc. Vietor v m/s, tlak v hPa v nadmorskej výške stanice.` +
-    (nWu ? " Pri amatérskych staniciach (WU) je tlak väčšinou prepočítaný na hladinu mora (*)." : "") +
+  $("#tableNote").textContent = `Zobrazených ${rows.length} z ${state.data.stanice.length + nWu} staníc. Vietor v m/s, tlak v hPa prepočítaný na hladinu mora (pri staniciach nad ${fmt(MSL_MAX_H, 0)} m sa neprepočítava).` +
+    (nWu ? " Amatérske stanice (*) posielajú tlak už prepočítaný samy." : "") +
     (unnamed ? ` Pre ${unnamed} ${unnamed === 1 ? "stanicu" : unnamed < 5 ? "stanice" : "staníc"} zatiaľ nepoznáme názov; doplniť ho možno v súbore stanice.json alebo skriptom aktualizovat_stanice.py.` : "");
 }
 $("#search").addEventListener("input", (e) => { state.query = e.target.value; renderTable(); });
+function pressTitle(s) {
+  const v = s.hodnoty;
+  if (v.tlak === undefined) return "";
+  const t = isWu(s) ? "Tlak udávaný stanicou, väčšinou už prepočítaný na hladinu mora"
+    : isHighStation(s) ? `Horská stanica: tlak na stanici ${fmt(v.tlak)} hPa, na hladinu mora sa neprepočítava`
+    : `Na stanici ${fmt(v.tlak)} hPa`;
+  return ` title="${esc(t)}"`;
+}
 
 /* Detail stanice */
 const CHARTS = {
@@ -872,6 +1033,15 @@ const CHARTS = {
   tlak: { label: "Tlak", unit: "hPa" },
   vlh: { label: "Vlhkosť", unit: "%" },
 };
+
+function pressureCell(s, ro) {
+  const v = s.hodnoty;
+  if (v.tlak === undefined) return ro("Tlak", "—");
+  if (isHighStation(s)) return ro("Tlak na stanici", `${fmt(v.tlak)}<small>hPa</small>`, `<span class="hint">horská stanica, bez prepočtu</span>`);
+  const p0 = mslp(s);
+  if (p0 === null) return ro("Tlak na stanici", `${fmt(v.tlak)}<small>hPa</small>`);
+  return ro("Tlak", `${s.vyskaZdroj ? "≈" : ""}${fmt(p0)}<small>hPa</small>`, `<span class="hint">na hladine mora · na stanici ${fmt(v.tlak)}</span>`);
+}
 
 function renderDetail() {
   const box = $("#detail");
@@ -894,7 +1064,7 @@ function renderDetail() {
   const cells = wuSt ? [
     ro("Vlhkosť", v.vlh_rel === undefined ? "—" : `${fmt(v.vlh_rel, 0)}<small>%</small>`),
     ro("Rosný bod", dp === null || dp === undefined ? "—" : `${fmt(dp)}<small>°C</small>`),
-    ro("Tlak", v.tlak === undefined ? "—" : `${fmt(v.tlak)}<small>hPa</small>`, `<span class="hint">udáva stanica</span>`),
+    ro("Tlak", v.tlak === undefined ? "—" : `${fmt(v.tlak)}<small>hPa</small>`, `<span class="hint">udáva stanica, k hladine mora</span>`),
     ro("Vietor", v.vie_pr_rych === undefined ? "—" : `${arrowSvg(v.vie_pr_smer, 16)}${fmt(v.vie_pr_rych)}<small>m/s</small>`,
       v.vie_pr_smer === undefined ? "" : `<span class="hint">od ${dirName(v.vie_pr_smer)} (${fmt(v.vie_pr_smer, 0)}°)</span>`),
     ro("Nárazy", v.vie_max_rych === undefined ? "—" : `${fmt(v.vie_max_rych)}<small>m/s</small>`,
@@ -912,7 +1082,7 @@ function renderDetail() {
   ] : [
     ro("Vlhkosť", v.vlh_rel === undefined ? "—" : `${fmt(v.vlh_rel, 0)}<small>%</small>`),
     ro("Rosný bod", dp === null ? "—" : `${fmt(dp)}<small>°C</small>`, `<span class="hint">vypočítaný</span>`),
-    ro("Tlak na stanici", v.tlak === undefined ? "—" : `${fmt(v.tlak)}<small>hPa</small>`),
+    pressureCell(s, ro),
     ro("Vietor", v.vie_pr_rych === undefined ? "—" : `${arrowSvg(v.vie_pr_smer, 16)}${fmt(v.vie_pr_rych)}<small>m/s</small>`,
       v.vie_pr_smer === undefined ? "" : `<span class="hint">od ${dirName(v.vie_pr_smer)} (${fmt(v.vie_pr_smer, 0)}°)</span>`),
     ro("Nárazy", v.vie_max_rych === undefined ? "—" : `${fmt(v.vie_max_rych)}<small>m/s</small>`,
@@ -993,11 +1163,15 @@ function renderChart() {
   if (!times.length) { box.innerHTML = `<div class="empty">Zatiaľ bez priebehu.</div>`; return; }
 
   const dew = d.t.map((t, i) => dewPoint(t, d.vlh[i]));
+  const selSt = findStation(state.selected);
+  const hBaro = baroHeight(selSt) ?? baroHeight(state.stationData);
+  const reduce = kind === "tlak" && !isWu(selSt) && hBaro !== null && hBaro <= MSL_MAX_H;
+  const press = reduce ? d.tlak.map((p, i) => seaLevelPressure(p, hBaro, d.t[i], d.vlh[i])) : d.tlak;
   const series = {
     t: [{ name: "Teplota", color: "var(--c-temp)", v: d.t }, { name: "Rosný bod", color: "var(--c-dew)", v: dew, dash: "5 4" }],
     vietor: [{ name: "Priemerná rýchlosť", color: "var(--c-wind)", v: d.vietor }, { name: "Nárazy", color: "var(--c-gust)", v: d.naraz, dash: "5 4" }],
     zrazky: [{ name: "Zrážky za 10 min", color: "var(--c-rain)", v: d.zrazky, bars: true }],
-    tlak: [{ name: "Tlak na stanici", color: "var(--c-press)", v: d.tlak }],
+    tlak: [{ name: reduce ? "Tlak na hladine mora" : isWu(selSt) ? "Tlak" : "Tlak na stanici", color: "var(--c-press)", v: press }],
     vlh: [{ name: "Relatívna vlhkosť", color: "var(--c-hum)", v: d.vlh }],
   }[kind];
 
@@ -1080,14 +1254,16 @@ function renderChart() {
   const span = (times[times.length - 1] - times[0]) / 3600;
   const notes = [];
   if (span < 23) notes.push(`Priebeh je zatiaľ za ${fmt(span, 0)} h; dopĺňa sa ${STATIC_MODE ? "s každou aktualizáciou" : "kým stránka beží"}.`);
-  const selSt = findStation(state.selected);
   if (isWu(selSt)) {
     if (kind === "zrazky") notes.push("Stĺpec = úhrn za 10 minút podľa denného úhrnu, ktorý hlási stanica.");
     if (kind === "tlak") notes.push("Tlak udáva stanica, väčšinou je prepočítaný na hladinu mora.");
     if (!selSt.vlastna && state.data.wuStav?.interval) notes.push(`Stanica sa obnovuje každých ${Math.round(state.data.wuStav.interval / 60)} minút.`);
   } else {
     if (kind === "zrazky") notes.push("Stĺpec = úhrn za 10 minút. Pri štarte sa staršie hodiny sťahujú len po častiach, preto môžu byť neúplné.");
-    if (kind === "tlak") notes.push("Tlak je v nadmorskej výške stanice, nie prepočítaný na hladinu mora.");
+    if (kind === "tlak" && reduce) {
+      notes.push(`Tlak prepočítaný na hladinu mora z tlaku na stanici, teploty a vlhkosti (tlakomer vo výške ${fmt(hBaro, 0)} m n. m.).`);
+      if (selSt && selSt.vyskaZdroj) notes.push("Výška stanice je odčítaná z modelu terénu, hodnota môže byť posunutá asi o 1 až 2 hPa.");
+    } else if (kind === "tlak") notes.push("Horská stanica: tlak je v jej nadmorskej výške, na hladinu mora by sa prepočítal nespoľahlivo.");
   }
   note.textContent = notes.join(" ");
 }
@@ -1178,7 +1354,10 @@ $("#wuRemove").addEventListener("click", async () => {
   }
 });
 $("#mapZoom").addEventListener("click", () => {
-  state.mapZoom = !state.mapZoom; store.set("pocasie.zoom", state.mapZoom ? "1" : "0");
+  const own = amateurs().find((x) => x.vlastna);
+  if (state.mapView || !own || !own.lat) { state.mapView = null; state.mapZoom = false; }
+  else { state.mapView = clampView({ lon: own.lon, lat: own.lat, z: OWN_ZOOM }); state.mapZoom = true; }
+  store.set("pocasie.zoom", state.mapZoom ? "1" : "0");
   hideTip(); renderMap();
 });
 $("#wuToggle").addEventListener("change", (e) => {

@@ -94,8 +94,13 @@ ako nginx alebo Caddy; samotný `server.py` je jednoduchý a nemá prihlasovanie
 - **Zrážky:** SHMÚ zverejňuje minútové úhrny. Úhrn za 1 h a 24 h je súčet minút, ktoré má server
   k dispozícii. Ak chýba časť intervalu (napríklad tesne po štarte), hodnota má znak ≈ a pri detaile
   stanice je uvedené, z akej časti intervalu pochádza.
-- **Tlak** je tlak v nadmorskej výške stanice, nie prepočítaný na hladinu mora. Preto majú horské
-  stanice výrazne nižšie hodnoty.
+- **Tlak** stránka prepočítava na hladinu mora, aby sa dal porovnať medzi stanicami a s predpoveďou.
+  SHMÚ meria tlak vo výške stanice; prepočet používa redukčný vzorec Nemeckej meteorologickej služby
+  (výška tlakomera, teplota a vlhkosť vzduchu). Pri detaile stanice je uvedený aj tlak na stanici.
+  Stanice nad 1 500 m (Chopok, Lomnický štít, Skalnaté pleso) sa neprepočítavajú, výsledok by bol
+  nespoľahlivý. Amatérske stanice posielajú tlak už prepočítaný samy.
+- **Mapa staníc** sa dá priblížiť kolieskom myši, dvojklikom, dvoma prstami alebo tlačidlami + a −;
+  priblížená mapa sa posúva ťahaním a ukazuje aj názvy staníc.
 - **Rosný bod** stránka vypočítava z teploty a vlhkosti (Magnusov vzorec).
 - **Stav počasia** je kód podľa tabuľky WMO 4680, ktorý hlási len časť staníc.
 - Stanica bez merania viac ako hodinu je označená ako **neaktuálna** a nezapočítava sa do extrémov.
@@ -207,5 +212,7 @@ Server si zmeny v súbore načíta sám, netreba ho reštartovať.
 - Geometria mriežky a čísla parametrov modelu ALADIN vychádzajú z toho istého projektu; čítanie
   súborov GRIB2 bolo overené voči knižnici ecCodes (ECMWF).
 - Štátne hranice: Natural Earth 1:10m, voľné dielo (public domain).
+- Nadmorské výšky staníc a výšky tlakomerov: databáza WMO OSCAR/Surface, <https://oscar.wmo.int/surface/>;
+  pri staniciach, ktoré v nej nie sú, digitálny model terénu Copernicus GLO-90 (cez Open-Meteo).
 - Modely ICON-EU (DWD) a ECMWF IFS: [Open-Meteo.com](https://open-meteo.com/), licencia
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

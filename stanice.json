@@ -1,68 +1,78 @@
 {
-  "_poznamka": "Názvy a polohy staníc SHMÚ. Kľúč je index stanice (ind_kli) z dát SHMÚ. Synoptické stanice majú aj nadmorskú výšku; ostatné sú doplnené z mapy staníc na shmu.sk skriptom aktualizovat_stanice.py. Súradnice (lat, lon) a výška sú nepovinné. Server zmeny načíta sám, bez reštartu.",
+  "_poznamka": "Názvy a polohy staníc SHMÚ. Kľúč je index stanice (ind_kli) z dát SHMÚ. Názvy a súradnice sú z mapy staníc na shmu.sk (skript aktualizovat_stanice.py). Nadmorská výška (vyska) a výška tlakomera (vyskaTlak) sú z databázy WMO OSCAR/Surface; pri staniciach, ktoré tam nie sú, je výška odčítaná z digitálneho modelu terénu Copernicus (vyskaZdroj). Výška tlakomera slúži na prepočet tlaku na hladinu mora. Všetky údaje okrem názvu sú nepovinné. Server zmeny načíta sám, bez reštartu.",
   "11803": {
     "nazov": "Trenčín",
     "lat": 48.86639,
-    "lon": 17.99944
+    "lon": 17.99944,
+    "vyska": 204
   },
   "11805": {
     "nazov": "Senica - Kunov",
     "lat": 48.68915,
-    "lon": 17.40309
+    "lon": 17.40309,
+    "vyska": 231
   },
   "11806": {
     "nazov": "Myjava",
     "lat": 48.75333,
-    "lon": 17.56028
+    "lon": 17.56028,
+    "vyska": 345
   },
   "11810": {
     "nazov": "Bratislava - Mlynská Dolina",
     "lat": 48.15222,
-    "lon": 17.06778
+    "lon": 17.06778,
+    "vyska": 190,
+    "vyskaZdroj": "model terénu"
   },
   "11812": {
     "nazov": "Malý Javorník",
     "lat": 48.2558,
     "lon": 17.1538,
-    "vyska": 586
+    "vyska": 581
   },
   "11813": {
     "nazov": "Bratislava - Koliba",
     "lat": 48.1686,
     "lon": 17.1106,
-    "vyska": 286
+    "vyska": 287
   },
   "11815": {
     "nazov": "Pezinok - Grinava",
     "lat": 48.27248,
-    "lon": 17.24564
+    "lon": 17.24564,
+    "vyska": 144
   },
   "11816": {
     "nazov": "Bratislava - Letisko",
     "lat": 48.1717,
     "lon": 17.2,
-    "vyska": 131
+    "vyska": 133
   },
   "11817": {
     "nazov": "Kráľová pri Senci",
     "lat": 48.19809,
-    "lon": 17.51369
+    "lon": 17.51369,
+    "vyska": 123
   },
   "11818": {
     "nazov": "Gabčíkovo",
     "lat": 47.89774,
-    "lon": 17.56621
+    "lon": 17.56621,
+    "vyska": 114
   },
   "11819": {
     "nazov": "Jaslovské Bohunice",
     "lat": 48.4867,
     "lon": 17.6708,
-    "vyska": 176
+    "vyska": 174,
+    "vyskaTlak": 178
   },
   "11820": {
     "nazov": "Žihárec",
     "lat": 48.07033,
-    "lon": 17.88196
+    "lon": 17.88196,
+    "vyska": 112
   },
   "11826": {
     "nazov": "Piešťany",
@@ -73,22 +83,26 @@
   "11833": {
     "nazov": "Modra - Piesok",
     "lat": 48.37278,
-    "lon": 17.27389
+    "lon": 17.27389,
+    "vyska": 533
   },
   "11835": {
     "nazov": "Moravský Svätý Ján",
     "lat": 48.58167,
-    "lon": 16.99417
+    "lon": 16.99417,
+    "vyska": 155
   },
   "11838": {
     "nazov": "Kamanová",
     "lat": 48.47028,
-    "lon": 18.10278
+    "lon": 18.10278,
+    "vyska": 154
   },
   "11839": {
     "nazov": "Uhrovec",
     "lat": 48.74142,
-    "lon": 18.34142
+    "lon": 18.34142,
+    "vyska": 243
   },
   "11841": {
     "nazov": "Dolný Hričov",
@@ -99,402 +113,512 @@
   "11849": {
     "nazov": "Žikava",
     "lat": 48.45832,
-    "lon": 18.38844
+    "lon": 18.38844,
+    "vyska": 319
   },
   "11855": {
     "nazov": "Nitra",
     "lat": 48.2806,
     "lon": 18.1356,
-    "vyska": 135
+    "vyska": 134.5,
+    "vyskaTlak": 135.8
   },
   "11856": {
     "nazov": "Mochovce",
     "lat": 48.2894,
     "lon": 18.4561,
-    "vyska": 261
+    "vyska": 260
   },
   "11857": {
     "nazov": "Turzovka",
     "lat": 49.40156,
-    "lon": 18.62678
+    "lon": 18.62678,
+    "vyska": 496,
+    "vyskaTlak": 497
   },
   "11858": {
     "nazov": "Hurbanovo",
     "lat": 47.8733,
     "lon": 18.1944,
-    "vyska": 115
+    "vyska": 112.1,
+    "vyskaTlak": 124
   },
   "11862": {
     "nazov": "Beluša",
     "lat": 49.06583,
-    "lon": 18.31639
+    "lon": 18.31639,
+    "vyska": 255,
+    "vyskaTlak": 256
   },
   "11865": {
     "nazov": "Žilina-Vlčince",
     "lat": 49.21144,
-    "lon": 18.77114
+    "lon": 18.77114,
+    "vyska": 358
   },
   "11866": {
     "nazov": "Čadca-Horelica",
     "lat": 49.43077,
-    "lon": 18.80913
+    "lon": 18.80913,
+    "vyska": 420
   },
   "11867": {
     "nazov": "Prievidza",
     "lat": 48.7697,
     "lon": 18.5939,
-    "vyska": 260
+    "vyska": 260,
+    "vyskaTlak": 261
   },
   "11868": {
     "nazov": "Oravská Lesná",
     "lat": 49.36787,
-    "lon": 19.18245
+    "lon": 19.18245,
+    "vyska": 781,
+    "vyskaTlak": 782
   },
   "11869": {
     "nazov": "Rabča",
     "lat": 49.47872,
-    "lon": 19.4836
+    "lon": 19.4836,
+    "vyska": 645
   },
   "11872": {
     "nazov": "Štiavnička (Ružomberok)",
     "lat": 49.07173,
-    "lon": 19.34087
+    "lon": 19.34087,
+    "vyska": 507
   },
   "11874": {
     "nazov": "Liptovský Hrádok",
     "lat": 49.04033,
-    "lon": 19.71729
+    "lon": 19.71729,
+    "vyska": 638
   },
   "11876": {
     "nazov": "Podbanské",
     "lat": 49.14006,
-    "lon": 19.909
+    "lon": 19.909,
+    "vyska": 972
   },
   "11878": {
     "nazov": "Liptovský Mikuláš-Lipt. Ondrašová",
     "lat": 49.09739,
-    "lon": 19.59029
+    "lon": 19.59029,
+    "vyska": 569
   },
   "11879": {
     "nazov": "Kremnické Bane",
     "lat": 48.73479,
-    "lon": 18.90809
+    "lon": 18.90809,
+    "vyska": 764
   },
   "11880": {
     "nazov": "Dudince",
     "lat": 48.1692,
     "lon": 18.8761,
-    "vyska": 139
+    "vyska": 139,
+    "vyskaTlak": 140
   },
   "11881": {
     "nazov": "Želiezovce",
     "lat": 48.04583,
-    "lon": 18.64111
+    "lon": 18.64111,
+    "vyska": 137,
+    "vyskaTlak": 137
   },
   "11883": {
     "nazov": "Veľké Lovce",
     "lat": 48.05609,
-    "lon": 18.33543
+    "lon": 18.33543,
+    "vyska": 186,
+    "vyskaTlak": 187
   },
   "11884": {
     "nazov": "Mužla",
     "lat": 47.80046,
-    "lon": 18.59567
+    "lon": 18.59567,
+    "vyska": 120
   },
   "11890": {
     "nazov": "Oravské Veselé",
     "lat": 49.47118,
-    "lon": 19.38352
+    "lon": 19.38352,
+    "vyska": 757
   },
   "11892": {
     "nazov": "Oravský Podzámok",
     "lat": 49.26216,
-    "lon": 19.36908
+    "lon": 19.36908,
+    "vyska": 530
   },
   "11893": {
     "nazov": "Žabokreky (pri Martine)",
     "lat": 49.02669,
-    "lon": 18.92284
+    "lon": 18.92284,
+    "vyska": 427,
+    "vyskaTlak": 428
   },
   "11894": {
     "nazov": "Donovaly",
     "lat": 48.8794,
     "lon": 19.2264,
-    "vyska": 992
+    "vyska": 965,
+    "vyskaTlak": 966
   },
   "11897": {
     "nazov": "Turčianske Teplice",
     "lat": 48.85907,
-    "lon": 18.85495
+    "lon": 18.85495,
+    "vyska": 508
   },
   "11898": {
     "nazov": "Banská Bystrica",
     "lat": 48.73342,
-    "lon": 19.1151
+    "lon": 19.1151,
+    "vyska": 429,
+    "vyskaTlak": 430
   },
   "11900": {
     "nazov": "Žiar nad Hronom",
     "lat": 48.5861,
     "lon": 18.8522,
-    "vyska": 275
+    "vyska": 274,
+    "vyskaTlak": 275
   },
   "11901": {
     "nazov": "Banská Štiavnica",
     "lat": 48.44906,
-    "lon": 18.91969
+    "lon": 18.91969,
+    "vyska": 570,
+    "vyskaTlak": 571
   },
   "11902": {
     "nazov": "Bzovík",
     "lat": 48.31861,
-    "lon": 19.0925
+    "lon": 19.0925,
+    "vyska": 353
   },
   "11903": {
     "nazov": "Sliač",
     "lat": 48.6425,
     "lon": 19.1419,
-    "vyska": 313
+    "vyska": 313,
+    "vyskaTlak": 314
   },
   "11904": {
     "nazov": "Vígľaš - Pstruša",
     "lat": 48.54374,
-    "lon": 19.32014
+    "lon": 19.32014,
+    "vyska": 368
   },
   "11905": {
     "nazov": "Dolné Plachtince",
     "lat": 48.20306,
-    "lon": 19.31167
+    "lon": 19.31167,
+    "vyska": 192
   },
   "11908": {
     "nazov": "Liptovská Osada",
     "lat": 48.95056,
-    "lon": 19.27222
+    "lon": 19.27222,
+    "vyska": 618
   },
   "11910": {
     "nazov": "Lom nad Rimavicou",
     "lat": 48.64389,
-    "lon": 19.64917
+    "lon": 19.64917,
+    "vyska": 1017,
+    "vyskaTlak": 1018
   },
   "11916": {
     "nazov": "Chopok",
     "lat": 48.9439,
     "lon": 19.5922,
-    "vyska": 2005
+    "vyska": 1995,
+    "vyskaTlak": 1996
   },
   "11917": {
     "nazov": "Brezno",
     "lat": 48.80035,
-    "lon": 19.63652
+    "lon": 19.63652,
+    "vyska": 488,
+    "vyskaTlak": 489
   },
   "11918": {
     "nazov": "Liesek",
     "lat": 49.3694,
     "lon": 19.6794,
-    "vyska": 692
+    "vyska": 692,
+    "vyskaTlak": 693
   },
   "11926": {
     "nazov": "Málinec",
     "lat": 48.51828,
-    "lon": 19.66146
+    "lon": 19.66146,
+    "vyska": 356
   },
   "11927": {
     "nazov": "Boľkovce",
     "lat": 48.3389,
     "lon": 19.7364,
-    "vyska": 214
+    "vyska": 214,
+    "vyskaTlak": 214
   },
   "11930": {
     "nazov": "Lomnický Štít",
     "lat": 49.1953,
     "lon": 20.215,
-    "vyska": 2635
+    "vyska": 2635,
+    "vyskaTlak": 2636
   },
   "11931": {
     "nazov": "Tatranská Lomnica - Skalnaté Pleso",
     "lat": 49.18944,
-    "lon": 20.23417
+    "lon": 20.23417,
+    "vyska": 1778
   },
   "11933": {
     "nazov": "Štrbské Pleso",
     "lat": 49.1217,
     "lon": 20.0603,
-    "vyska": 1322
+    "vyska": 1319,
+    "vyskaTlak": 1320
   },
   "11934": {
     "nazov": "Poprad",
     "lat": 49.0689,
     "lon": 20.2456,
-    "vyska": 694
+    "vyska": 694,
+    "vyskaTlak": 695
   },
   "11935": {
     "nazov": "Tatranská Lomnica",
     "lat": 49.16639,
-    "lon": 20.28528
+    "lon": 20.28528,
+    "vyska": 835
   },
   "11936": {
     "nazov": "Tatranská Javorina",
     "lat": 49.26389,
-    "lon": 20.13944
+    "lon": 20.13944,
+    "vyska": 1019,
+    "vyskaZdroj": "model terénu"
   },
   "11938": {
     "nazov": "Telgárt",
     "lat": 48.8486,
     "lon": 20.1892,
-    "vyska": 901
+    "vyska": 906,
+    "vyskaTlak": 906
   },
   "11941": {
     "nazov": "Ratková",
     "lat": 48.5925,
-    "lon": 20.09167
+    "lon": 20.09167,
+    "vyska": 313,
+    "vyskaZdroj": "model terénu"
   },
   "11942": {
     "nazov": "Rimavská Sobota",
     "lat": 48.37361,
-    "lon": 20.00861
+    "lon": 20.00861,
+    "vyska": 212,
+    "vyskaZdroj": "model terénu"
   },
   "11944": {
     "nazov": "Rožňava",
     "lat": 48.65223,
-    "lon": 20.5355
+    "lon": 20.5355,
+    "vyska": 316,
+    "vyskaZdroj": "model terénu"
   },
   "11945": {
     "nazov": "Švedlár",
     "lat": 48.81321,
-    "lon": 20.70975
+    "lon": 20.70975,
+    "vyska": 474,
+    "vyskaZdroj": "model terénu"
   },
   "11946": {
     "nazov": "Štós - Kúpele",
     "lat": 48.71815,
-    "lon": 20.7954
+    "lon": 20.7954,
+    "vyska": 611,
+    "vyskaZdroj": "model terénu"
   },
   "11947": {
     "nazov": "Moldava nad Bodvou",
     "lat": 48.61508,
-    "lon": 21.00512
+    "lon": 21.00512,
+    "vyska": 217,
+    "vyskaZdroj": "model terénu"
   },
   "11949": {
     "nazov": "Spišské Vlachy",
     "lat": 48.9442,
-    "lon": 20.80201
+    "lon": 20.80201,
+    "vyska": 382,
+    "vyskaZdroj": "danubehis.org"
   },
   "11950": {
     "nazov": "Podolínec",
     "lat": 49.26207,
-    "lon": 20.54269
+    "lon": 20.54269,
+    "vyska": 569,
+    "vyskaZdroj": "model terénu"
   },
   "11951": {
     "nazov": "Červený Kláštor",
     "lat": 49.38722,
-    "lon": 20.4225
+    "lon": 20.4225,
+    "vyska": 474,
+    "vyskaZdroj": "model terénu"
   },
   "11952": {
     "nazov": "Gánovce",
     "lat": 49.0333,
     "lon": 20.3167,
-    "vyska": 703
+    "vyska": 703,
+    "vyskaTlak": 703
   },
   "11953": {
     "nazov": "Revúca",
     "lat": 48.69294,
-    "lon": 20.11501
+    "lon": 20.11501,
+    "vyska": 345,
+    "vyskaZdroj": "model terénu"
   },
   "11957": {
     "nazov": "Stará Lesná",
     "lat": 49.15139,
-    "lon": 20.28944
+    "lon": 20.28944,
+    "vyska": 811,
+    "vyskaZdroj": "model terénu"
   },
   "11958": {
     "nazov": "Kojšovská hoľa",
     "lat": 48.7833,
     "lon": 20.9833,
-    "vyska": 1244
+    "vyska": 1247,
+    "vyskaTlak": 1246
   },
   "11959": {
     "nazov": "Tatranská Polianka",
     "lat": 49.12166,
-    "lon": 20.18576
+    "lon": 20.18576,
+    "vyska": 983,
+    "vyskaZdroj": "model terénu"
   },
   "11961": {
     "nazov": "Plaveč",
     "lat": 49.26013,
-    "lon": 20.84223
+    "lon": 20.84223,
+    "vyska": 485,
+    "vyskaZdroj": "model terénu"
   },
   "11962": {
     "nazov": "Bardejov",
     "lat": 49.28504,
-    "lon": 21.2709
+    "lon": 21.2709,
+    "vyska": 314,
+    "vyskaZdroj": "model terénu"
   },
   "11966": {
     "nazov": "Čaklov",
     "lat": 48.90278,
-    "lon": 21.63139
+    "lon": 21.63139,
+    "vyska": 139,
+    "vyskaZdroj": "model terénu"
   },
   "11967": {
     "nazov": "Zlatá Baňa",
     "lat": 48.94992,
-    "lon": 21.42037
+    "lon": 21.42037,
+    "vyska": 587,
+    "vyskaZdroj": "model terénu"
   },
   "11968": {
     "nazov": "Košice",
     "lat": 48.6722,
     "lon": 21.2225,
-    "vyska": 230
+    "vyska": 230,
+    "vyskaTlak": 231
   },
   "11969": {
     "nazov": "Košice - Podhradová",
     "lat": 48.75319,
-    "lon": 21.24531
+    "lon": 21.24531,
+    "vyska": 248,
+    "vyskaZdroj": "model terénu"
   },
   "11970": {
     "nazov": "Silica",
     "lat": 48.55492,
-    "lon": 20.52299
+    "lon": 20.52299,
+    "vyska": 524,
+    "vyskaZdroj": "model terénu"
   },
   "11974": {
     "nazov": "Roztoky",
     "lat": 49.39643,
-    "lon": 21.4922
+    "lon": 21.4922,
+    "vyska": 411,
+    "vyskaZdroj": "model terénu"
   },
   "11976": {
     "nazov": "Tisinec",
     "lat": 49.2156,
     "lon": 21.65,
-    "vyska": 216
+    "vyska": 216,
+    "vyskaTlak": 217
   },
   "11977": {
     "nazov": "Medzilaborce",
     "lat": 49.30165,
-    "lon": 21.88401
+    "lon": 21.88401,
+    "vyska": 355,
+    "vyskaZdroj": "model terénu"
   },
   "11978": {
     "nazov": "Trebišov",
     "lat": 48.6631,
     "lon": 21.7239,
-    "vyska": 105
+    "vyska": 103,
+    "vyskaTlak": 106
   },
   "11979": {
     "nazov": "Somotor",
     "lat": 48.39074,
-    "lon": 21.80633
+    "lon": 21.80633,
+    "vyska": 99,
+    "vyskaZdroj": "model terénu"
   },
   "11982": {
     "nazov": "Michalovce",
     "lat": 48.73222,
-    "lon": 21.88611
+    "lon": 21.88611,
+    "vyska": 111,
+    "vyskaZdroj": "model terénu"
   },
   "11992": {
     "nazov": "Osadné",
     "lat": 49.14222,
-    "lon": 22.15333
+    "lon": 22.15333,
+    "vyska": 386,
+    "vyskaZdroj": "model terénu"
   },
   "11993": {
     "nazov": "Kamenica nad Cirochou",
     "lat": 48.9389,
     "lon": 22.0061,
-    "vyska": 176
+    "vyska": 175,
+    "vyskaTlak": 178
   },
   "11995": {
     "nazov": "Vysoká nad Uhom",
     "lat": 48.63304,
-    "lon": 22.1003
+    "lon": 22.1003,
+    "vyska": 106,
+    "vyskaZdroj": "model terénu"
   }
 }
