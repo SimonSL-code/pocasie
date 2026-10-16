@@ -229,6 +229,7 @@ Server si zmeny v súbore načíta sám, netreba ho reštartovať.
 | `server.py` | sťahuje dáta zo SHMÚ a poskytuje webovú stránku |
 | `static/index.html` | samotná stránka (HTML, CSS, JavaScript v jednom súbore) |
 | `static/hranice.json` | štátne hranice pre mapu |
+| `static/okresy.json` | hranice okresov a krajov pre mapy |
 | `stanice.json` | názvy a polohy staníc |
 | `aktualizovat_stanice.py` | doplní stanice do `stanice.json` z uloženej stránky SHMÚ |
 | `generuj.py` | statická verzia pre GitHub Pages (spúšťa ju GitHub Actions) |
@@ -254,6 +255,10 @@ Server si zmeny v súbore načíta sám, netreba ho reštartovať.
 - Geometria mriežky a čísla parametrov modelu ALADIN vychádzajú z toho istého projektu; čítanie
   súborov GRIB2 bolo overené voči knižnici ecCodes (ECMWF).
 - Štátne hranice: Natural Earth 1:10m, voľné dielo (public domain).
+- Hranice okresov a krajov (`static/okresy.json`): © prispievatelia OpenStreetMap, licencia
+  [ODbL 1.0](https://opendatacommons.org/licenses/odbl/), cez [geoBoundaries](https://www.geoboundaries.org/)
+  (SVK ADM2 a ADM1). Súbor obsahuje len vnútorné hranice, zjednodušené asi na 250 m; je to odvodená
+  databáza pod tou istou licenciou.
 - Nadmorské výšky staníc a výšky tlakomerov: databáza WMO OSCAR/Surface, <https://oscar.wmo.int/surface/>;
   pri staniciach, ktoré v nej nie sú, digitálny model terénu Copernicus GLO-90 (cez Open-Meteo).
 - Modely ICON-EU (DWD) a ECMWF IFS: [Open-Meteo.com](https://open-meteo.com/), licencia

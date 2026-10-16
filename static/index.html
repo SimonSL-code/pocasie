@@ -129,6 +129,8 @@ h2 { margin: 0; font-family: var(--font-display); font-stretch: 85%; font-weight
 .map-hint { margin-left: auto; font-size: 12px; color: var(--muted); text-align: right; }
 .map-land { fill: var(--sunken); stroke: none; }
 .map-border { fill: none; stroke: var(--muted); stroke-width: 1.1; stroke-linejoin: round; opacity: .55; }
+.map-okres { fill: none; stroke: var(--muted); stroke-width: .7; stroke-linejoin: round; opacity: .45; }
+.map-okres.kraj { stroke-width: 1.1; opacity: .65; }
 .map-st { cursor: pointer; }
 .map-st circle { stroke: var(--surface); stroke-width: 2; }
 .map-st.sel circle.ring { fill: none; stroke: var(--ink); stroke-width: 1.6; }
@@ -455,7 +457,7 @@ footer a { color: inherit; }
   </section>
 
   <footer>
-    <span>Zdroj dát: Slovenský hydrometeorologický ústav, <a href="https://opendata.shmu.sk/" target="_blank" rel="noopener">opendata.shmu.sk</a>. Hranice: Natural Earth.</span>
+    <span>Zdroj dát: Slovenský hydrometeorologický ústav, <a href="https://opendata.shmu.sk/" target="_blank" rel="noopener">opendata.shmu.sk</a>. Hranice štátov: Natural Earth. Hranice okresov: © prispievatelia <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL), cez geoBoundaries.</span>
     <span>Modely ICON-EU (DWD) a ECMWF IFS: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>).</span>
     <span id="wuCredit" hidden>Amatérske stanice: <a href="https://www.wunderground.com/" target="_blank" rel="noopener">Weather Underground</a>.</span>
     <span>Časy sú uvedené v miestnom čase prehliadača.</span>
@@ -797,6 +799,29 @@ function renderExtremes() {
 /* Mapa */
 let borders = null;
 fetch("hranice.json").then((r) => r.json()).then((d) => { borders = d.ciary; if (state.data) renderMap(); }).catch(() => {});
+/* Hranice okresov a krajov vo vnútri Slovenska (OpenStreetMap cez geoBoundaries): [[1 = aj hranica kraja, [[lon, lat], …]], …] */
+let districts = null;
+fetch("okresy.json").then((r) => r.json()).then((d) => {
+  districts = d.ciary;
+  if (state.data) renderMap();
+  drawForecast(); drawRadar();
+}).catch(() => {});
+// okresy na plátne (mapa predpovede a radaru); s = mierka plátna voči MAP, alpha = [okres, kraj]
+function drawDistricts(ctx, s, color, alpha = [0.2, 0.4]) {
+  if (!districts) return;
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineJoin = "round";
+  for (const kraj of [0, 1]) {
+    ctx.globalAlpha = alpha[kraj]; ctx.lineWidth = kraj ? 0.9 : 0.6;
+    ctx.beginPath();
+    for (const [k, line] of districts) {
+      if (k !== kraj) continue;
+      line.forEach(([lo, la], q) => { const [x, y] = proj(lo, la); q ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s); });
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 const MAP = { lon0: 16.75, lon1: 22.65, lat0: 47.66, lat1: 49.66, w: 720 };
 MAP.kx = Math.cos((48.7 * Math.PI) / 180);
 MAP.scale = MAP.w / ((MAP.lon1 - MAP.lon0) * MAP.kx);
@@ -841,6 +866,11 @@ function renderMap() {
   if (outline) {
     const d = outline.map((ring) => ring.map(([lo, la], q) => `${q ? "L" : "M"}${P(lo, la).map((v) => v.toFixed(1)).join(" ")}`).join("") + "Z").join("");
     g.append(el("path", { class: "map-land", d }));
+  }
+  if (districts) {
+    for (const [k, line] of districts) {
+      g.append(el("polyline", { class: `map-okres${k ? " kraj" : ""}`, points: line.map(([lon, lat]) => P(lon, lat).map((v) => v.toFixed(1)).join(",")).join(" ") }));
+    }
   }
   if (borders) {
     for (const line of borders) {
@@ -2039,7 +2069,9 @@ function drawForecast() {
     ctx.textAlign = "left";
   }
 
-  // 3) hranice: susedné štáty jemne, obrys Slovenska výraznejšie
+  // 3) hranice: okresy a kraje, susedné štáty jemne, obrys Slovenska výraznejšie
+  // na farebnom poli svetlé, aby sa nepliedli s tmavými izočiarami
+  drawDistricts(ctx, G.s, surface, [0.45, 0.8]);
   if (borders) {
     ctx.strokeStyle = ink; ctx.globalAlpha = 0.25; ctx.lineWidth = 0.8; ctx.lineJoin = "round";
     for (const line of borders) {
@@ -2551,7 +2583,8 @@ function drawRadar() {
     ctx.imageSmoothingEnabled = G.r > 1;
     ctx.drawImage(G.off, 0, 0, G.ow * G.r, G.oh * G.r);
   }
-  // 2) hranice
+  // 2) hranice okresov a štátov
+  drawDistricts(ctx, s, ink);
   if (borders) {
     ctx.strokeStyle = ink; ctx.globalAlpha = 0.3; ctx.lineWidth = 0.8; ctx.lineJoin = "round";
     for (const line of borders) {
