@@ -34,7 +34,10 @@ from urllib.parse import quote, unquote, urlparse
 from urllib.request import Request, urlopen
 
 import aladin
+import historia as hist
+import radar
 import wunderground as wu
+import zrazkomery as zr
 
 HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"
@@ -50,25 +53,11 @@ NWP_HOURS = tuple(range(0, 49)) + tuple(range(51, 103, 3))
 NWP_MIN_HOURS = 72
 USER_AGENT = "pocasie-shmu/1.0 (osobna stranka s meraniami SHMU)"
 
-# Čas merania ("minuta") je v SEČ, teda pevne UTC+1 aj v lete.
-SEC = timezone(timedelta(hours=1))
-
-# Polia, ktoré si server pamätá pre grafy za posledných 24 hodín.
-SERIES_FIELDS = (
-    "t",             # teplota vzduchu 2 m [°C]
-    "vlh_rel",       # relatívna vlhkosť [%]
-    "tlak",          # tlak vzduchu v mieste stanice [hPa]
-    "vie_pr_rych",   # priemerná rýchlosť vetra [m/s]
-    "vie_max_rych",  # maximálna rýchlosť vetra (náraz) [m/s]
-    "vie_pr_smer",   # priemerný smer vetra [°]
-    "zra_uhrn",      # úhrn zrážok za minútu [mm]
-    "dohl",          # dohľadnosť [m]
-    "sneh_pokr",     # výška snehovej pokrývky [cm]
-    "stav_poc",      # stav počasia, kód WMO 4680
-    "zglo",          # globálne žiarenie [W/m²]
-    "tprz",          # prízemná teplota [°C]
-)
-IDX = {name: i for i, name in enumerate(SERIES_FIELDS)}
+# Čas merania ("minuta") je v SEČ, polia ukladané pre grafy: pozri historia.py
+SEC = hist.SEC
+SERIES_FIELDS = hist.SERIES_FIELDS
+IDX = hist.IDX
+parse_minuta = hist.parse_minuta
 
 FILE_RE = re.compile(r"^aws1min - \d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}\.json$")
 DAY_RE = re.compile(r"^\d{8}/$")
@@ -162,23 +151,13 @@ def num(value):
     return f if math.isfinite(f) else None
 
 
-def parse_minuta(value) -> int | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        dt = datetime.fromisoformat(value)
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=SEC)
-    return int(dt.timestamp())
-
-
 class Store:
-    def __init__(self, history_hours: int):
+    def __init__(self, history_hours: int, days: int = 8):
         self.lock = threading.Lock()
         self.keep_seconds = (history_hours + 1) * 3600
+        self.keep_days = days
         self.series: dict[int, dict[int, tuple]] = {}  # stanica -> {čas: hodnoty}
+        self.hours: dict[int, dict[int, list]] = {}    # stanica -> {hodina: súhrn} pre grafy na niekoľko dní
         self.latest_raw: dict[int, tuple[int, dict]] = {}  # posledný celý záznam
         self.processed: set[str] = set()
         self.version = 0
@@ -217,11 +196,22 @@ class Store:
         return added
 
     def _prune(self) -> None:
+        """Minúty staršie než história grafov sa presunú do hodinových súhrnov."""
         newest = max((max(s) for s in self.series.values() if s), default=0)
         cutoff = newest - self.keep_seconds
-        for s in self.series.values():
-            for ts in [t for t in s if t < cutoff]:
-                del s[ts]
+        for sid, s in self.series.items():
+            old = [t for t in s if t < cutoff]
+            if not old:
+                continue
+            groups: dict[int, list] = {}
+            for ts in old:
+                groups.setdefault(ts // 3600 * 3600, []).append(s.pop(ts))
+            hours = self.hours.setdefault(sid, {})
+            for h, rows in groups.items():
+                hours[h] = hist.combine([hist.summarize(rows), hours.get(h)])
+        for hours in self.hours.values():
+            for ts in [t for t in hours if t < newest - self.keep_days * 86400]:
+                del hours[ts]
 
     def cached(self, key: str, build) -> bytes:
         with self.lock:
@@ -273,6 +263,36 @@ def window_sum(points: list[tuple[int, tuple]], start: int, end: int, idx: int):
     return total, have
 
 
+def today_summary(points: list[tuple[int, tuple]], last_ts: int) -> dict | None:
+    """Dnešné minimum, maximum a úhrn zrážok od miestnej polnoci (rovnaký tvar ako historia.daily)."""
+    start = hist.day_start(last_ts)
+    t_i, r_i, g_i = IDX["t"], IDX["zra_uhrn"], IDX["vie_max_rych"]
+    lo = hi = gust = None
+    rain, n_rain, n = 0.0, 0, 0
+    for ts, v in points:
+        if ts < start:
+            continue
+        n += 1
+        t = v[t_i]
+        if t is not None:
+            if lo is None or t < lo[0]:
+                lo = (t, ts)
+            if hi is None or t > hi[0]:
+                hi = (t, ts)
+        if v[g_i] is not None and (gust is None or v[g_i] > gust):
+            gust = v[g_i]
+        if v[r_i] is not None:
+            rain += v[r_i]
+            n_rain += 1
+    if not n:
+        return None
+    span = max(600, last_ts + 60 - start) / 60
+    return {"den": hist.day_label(start), "zaciatok": start, "tMin": lo and lo[0], "tMax": hi and hi[0],
+            "tMinCas": lo and lo[1], "tMaxCas": hi and hi[1], "naraz": gust,
+            "zrazky": round(rain, 1) if n_rain else None,
+            "pokrytie": round(min(1, n / span), 2), "pokrytieZrazok": round(min(1, n_rain / span), 2)}
+
+
 def build_current(store: Store, stations: Stations) -> dict:
     catalog = stations.get()
     out = []
@@ -305,6 +325,7 @@ def build_current(store: Store, stations: Stations) -> dict:
         rain_i = IDX["zra_uhrn"]
         r1, c1 = window_sum(points, last_ts - 3600, last_ts, rain_i)
         r24, c24 = window_sum(points, last_ts - 86400, last_ts, rain_i)
+        today = today_summary(points, last_ts)
 
         raw_ts, raw = store.latest_raw.get(sid, (None, {}))
         soil = {d: num(raw.get(f"t_pod{d}")) for d in (5, 10, 20, 50, 100)}
@@ -322,6 +343,7 @@ def build_current(store: Store, stations: Stations) -> dict:
             "zmenaTeploty1h": None if t_hour_ago is None or "t" not in latest else round(latest["t"] - t_hour_ago, 1),
             "tMin24": min(temps) if temps else None,
             "tMax24": max(temps) if temps else None,
+            "dnes": today,
             "zrazky1h": None if c1 == 0 else {"mm": round(r1, 2), "pokrytie": round(min(c1 / 60, 1), 2)},
             "zrazky24h": None if c24 == 0 else {"mm": round(r24, 2), "pokrytie": round(min(c24 / 1440, 1), 2)},
             "poda": {k: v for k, v in soil.items() if v is not None},
@@ -335,14 +357,7 @@ def build_current(store: Store, stations: Stations) -> dict:
     }
 
 
-def circular_mean(angles: list[float]):
-    if not angles:
-        return None
-    s = sum(math.sin(math.radians(a)) for a in angles)
-    c = sum(math.cos(math.radians(a)) for a in angles)
-    if abs(s) < 1e-9 and abs(c) < 1e-9:
-        return None
-    return round(math.degrees(math.atan2(s, c)) % 360)
+circular_mean = hist.circular_mean
 
 
 def build_station(store: Store, stations: Stations, sid: int) -> dict | None:
@@ -350,33 +365,12 @@ def build_station(store: Store, stations: Stations, sid: int) -> dict | None:
     if not series:
         return None
     meta = stations.get().get(sid, {})
-    bins: dict[int, list[tuple]] = {}
+    groups: dict[int, list[tuple]] = {}
     for ts, v in series.items():
-        bins.setdefault(ts // 600 * 600, []).append(v)
-
-    def mean(rows, name):
-        vals = [r[IDX[name]] for r in rows if r[IDX[name]] is not None]
-        return round(sum(vals) / len(vals), 2) if vals else None
-
-    def peak(rows, name):
-        vals = [r[IDX[name]] for r in rows if r[IDX[name]] is not None]
-        return max(vals) if vals else None
-
-    keys = sorted(bins)
-    cols = {k: [] for k in ("cas", "t", "vlh", "tlak", "vietor", "naraz", "smer", "zrazky", "zrazkyMinut", "ziarenie")}
-    for k in keys:
-        rows = bins[k]
-        rain = [r[IDX["zra_uhrn"]] for r in rows if r[IDX["zra_uhrn"]] is not None]
-        cols["cas"].append(k + 300)  # stred 10-minútového intervalu
-        cols["t"].append(mean(rows, "t"))
-        cols["vlh"].append(mean(rows, "vlh_rel"))
-        cols["tlak"].append(mean(rows, "tlak"))
-        cols["vietor"].append(mean(rows, "vie_pr_rych"))
-        cols["naraz"].append(peak(rows, "vie_max_rych"))
-        cols["smer"].append(circular_mean([r[IDX["vie_pr_smer"]] for r in rows if r[IDX["vie_pr_smer"]] is not None]))
-        cols["zrazky"].append(round(sum(rain), 2) if rain else None)
-        cols["zrazkyMinut"].append(len(rain))
-        cols["ziarenie"].append(mean(rows, "zglo"))
+        groups.setdefault(ts // 600 * 600, []).append(v)
+    bins = [(k, hist.summarize(groups[k])) for k in sorted(groups)]
+    hours = sorted(store.hours.get(sid, {}).items())
+    cols = hist.series_columns(bins, 600)   # čas = stred 10-minútového intervalu
     raw_ts, raw = store.latest_raw.get(sid, (None, {}))
     return {
         "id": sid,
@@ -386,6 +380,9 @@ def build_station(store: Store, stations: Stations, sid: int) -> dict | None:
         "lat": meta.get("lat"),
         "lon": meta.get("lon"),
         "rady": cols,
+        "radyHod": hist.series_columns(hours, 3600),
+        "dni": hist.daily([(ts, b, 3600) for ts, b in hours] + [(ts, b, 600) for ts, b in bins],
+                          until=max(series) + 60),
         "poslednyZaznam": {"cas": raw_ts, "hodnoty": raw},
     }
 
@@ -393,6 +390,12 @@ def build_station(store: Store, stations: Stations, sid: int) -> dict | None:
 # --------------------------------------------------------------------------
 # Sťahovanie na pozadí
 # --------------------------------------------------------------------------
+
+def _half_hour(path: str) -> bool:
+    """Súbor s meraniami končiacimi o celej alebo o pol hodine (vzorka pre staršie dni)."""
+    m = re.search(r" \d{2}-(\d{2})-\d{2}\.json$", path)
+    return bool(m) and int(m.group(1)) % 30 == 0
+
 
 class Collector(threading.Thread):
     def __init__(self, shmu: Shmu, store: Store, history_hours: int, full_hours: int, poll: int):
@@ -402,6 +405,9 @@ class Collector(threading.Thread):
         self.full_files = full_hours * 12
         self.poll = poll
         self.backfilled = False
+        self.days_done = False
+        self.older: set[str] = set()
+        self.older_days: set[str] = set()
 
     def fetch(self, path: str) -> None:
         try:
@@ -430,6 +436,36 @@ class Collector(threading.Thread):
         self.backfilled = True
         log("História načítaná.")
 
+    def backfill_days(self, files: list[str]) -> None:
+        """Po častiach doplní staršie dni pre grafy: súbor každých 30 minút, najviac 24 súborov naraz."""
+        if self.days_done or self.store.keep_days <= 1:
+            return
+        oldest = hist.day_label(time.time() - (self.store.keep_days + 1) * 86400).replace("-", "")
+        recent = set(files[-self.history_files:])
+        plan = [p for p in files if p not in recent and p not in self.older and _half_hour(p)][::-1]
+        if len(plan) < 24:
+            recent_days = {p.rsplit("/", 2)[-2] for p in files}
+            days = sorted((e.rstrip("/") for e in self.shmu.listing(OBS_PATH) if DAY_RE.match(e)), reverse=True)
+            for day in days:
+                if day < oldest or len(plan) >= 24:
+                    break
+                if day in recent_days or day in self.older_days:
+                    continue
+                folder = f"{OBS_PATH}/{day}"
+                todo = sorted((f"{folder}/{n}" for n in self.shmu.listing(folder) if FILE_RE.match(n)), reverse=True)
+                todo = [p for p in todo if _half_hour(p) and p not in self.older]
+                if not todo:
+                    self.older_days.add(day)
+                plan.extend(todo)
+        plan = plan[:24]
+        if not plan:
+            self.days_done = True
+            log("História dní načítaná.")
+            return
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            list(pool.map(self.fetch, plan))
+        self.older.update(plan)
+
     def run(self) -> None:
         while True:
             ok = True
@@ -446,6 +482,10 @@ class Collector(threading.Thread):
                     if new:
                         log(f"Nové merania: {', '.join(p.rpartition('/')[2] for p in new)}")
                     self.store.processed &= set(files)
+                    try:
+                        self.backfill_days(files)
+                    except Exception as err:
+                        log(f"História dní: {err}")
                 self.store.status.update(stav="ok", chyba=None)
             except Exception as err:
                 ok = False
@@ -453,6 +493,59 @@ class Collector(threading.Thread):
                 log(f"Chyba: {err}")
             self.store.status["poslednaKontrola"] = int(time.time())
             time.sleep(self.poll if ok else 60)
+
+
+# --------------------------------------------------------------------------
+# Zrážkomerné stanice a radar
+# --------------------------------------------------------------------------
+
+class GaugeCollector(threading.Thread):
+    """Každé 2 minúty nové súbory zrážkomerov; pri štarte posledných 24 h, staršie dni postupne."""
+
+    def __init__(self, shmu: Shmu, poll: int):
+        super().__init__(daemon=True)
+        self.shmu, self.poll = shmu, poll
+        self.gauges = zr.Gauges()
+        self.lock = threading.Lock()
+        self.status = {"stav": "start", "chyba": None, "poslednaKontrola": None}
+        self.version = 0
+        self._cache: tuple[int, bytes] | None = None
+
+    def body(self) -> bytes:
+        with self.lock:
+            if not self._cache or self._cache[0] != self.version:
+                lst, newest = self.gauges.build(zr.load_catalog())
+                doc = {"stav": self.status, "najnovsieMeranie": newest or None, "stanice": lst}
+                self._cache = (self.version, json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+            return self._cache[1]
+
+    def run(self) -> None:
+        first = True
+        while True:
+            # sťahuje sa do kópie, aby stránka medzitým čítala ucelené dáta
+            shadow = zr.Gauges(self.gauges.to_state(sorted(self.gauges.processed)))
+            shadow.older, shadow.older_days = set(self.gauges.older), set(self.gauges.older_days)
+            _files, status = zr.update(self.shmu, shadow, max_files=288 if first else 72, older=12, log=log)
+            with self.lock:
+                self.gauges = shadow
+                self.status = status
+                self.version += 1
+            first = False
+            time.sleep(self.poll if status["stav"] == "ok" else 60)
+
+
+class RadarCollector(threading.Thread):
+    """Každé 2,5 minúty nové snímky radaru do priečinka _radar (posledné 2 hodiny)."""
+
+    def __init__(self, shmu: Shmu, folder: Path, poll: int = 150):
+        super().__init__(daemon=True)
+        self.shmu, self.folder, self.poll = shmu, folder, poll
+        self.meta: dict = {"snimky": [], "mriezka": None, "stav": {"stav": "start", "chyba": None}}
+
+    def run(self) -> None:
+        while True:
+            self.meta = radar.update(self.shmu, self.folder, log=log)
+            time.sleep(self.poll if self.meta["stav"]["stav"] == "ok" else 60)
 
 
 # --------------------------------------------------------------------------
@@ -709,7 +802,8 @@ CONTENT_TYPES = {
 }
 
 
-def make_handler(store: Store, stations: Stations, fc: Forecast | None, wux: dict):
+def make_handler(store: Store, stations: Stations, fc: Forecast | None, wux: dict,
+                 gauges: GaugeCollector | None = None, rad: RadarCollector | None = None):
     wset, wstore, wclient, wcoll = wux["settings"], wux["store"], wux["client"], wux["collector"]
 
     def wu_list() -> bytes:
@@ -778,6 +872,18 @@ def make_handler(store: Store, stations: Stations, fc: Forecast | None, wux: dic
                     return self.send_json(store.cached(f"st{sid}", lambda: build_station(store, stations, sid)))
                 if path == "/api/status":
                     return self.send_json(json.dumps(store.status, ensure_ascii=False).encode("utf-8"))
+                if path == "/api/zrazkomery":
+                    if gauges is None:
+                        return self.send_json('{"chyba":"Zrážkomery sú vypnuté."}'.encode("utf-8"), 404)
+                    return self.send_json(gauges.body())
+                if path == "/api/radar":
+                    if rad is None:
+                        return self.send_json('{"chyba":"Radar je vypnutý."}'.encode("utf-8"), 404)
+                    return self.send_json(json.dumps(rad.meta, ensure_ascii=False).encode("utf-8"))
+                m = re.fullmatch(r"/api/radar/(\d{12}\.bin)", path)
+                if m and rad is not None and (rad.folder / m.group(1)).is_file():
+                    return self.send_body(200, (rad.folder / m.group(1)).read_bytes(), "application/octet-stream",
+                                          "public, max-age=86400")
                 if path.startswith("/api/forecast"):
                     return self.forecast(path)
                 if path in ("/", ""):
@@ -890,6 +996,10 @@ def main() -> None:
     parser.add_argument("--interval", type=int, default=120, help="ako často kontrolovať nové dáta v sekundách (predvolene 120)")
     parser.add_argument("--otvorit", action="store_true", help="po spustení otvoriť stránku v prehliadači")
     parser.add_argument("--bez-predpovede", action="store_true", help="nesťahovať predpoveď ALADIN (asi 11 MB za 6 hodín)")
+    parser.add_argument("--dni", type=int, default=8,
+                        help="koľko dní histórie pre grafy a denné maximá; staršie dni sa dopĺňajú postupne (predvolene 8)")
+    parser.add_argument("--bez-radaru", action="store_true", help="nesťahovať snímky radaru")
+    parser.add_argument("--bez-zrazkomerov", action="store_true", help="nesťahovať údaje zrážkomerných staníc")
     parser.add_argument("--wu-subor", default=str(HERE / "wunderground.json"), help=argparse.SUPPRESS)
     parser.add_argument("--zdroj", default=os.environ.get("SHMU_BASE_URL", "https://opendata.shmu.sk"), help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -897,7 +1007,7 @@ def main() -> None:
     if sys.version_info < (3, 9):
         sys.exit("Potrebný je Python 3.9 alebo novší.")
 
-    store = Store(args.hodiny)
+    store = Store(args.hodiny, max(1, args.dni))
     stations = Stations(STATIONS_FILE)
     stations.get()
     Collector(Shmu(args.zdroj), store, args.hodiny, max(1, args.plne_hodiny), max(30, args.interval)).start()
@@ -905,6 +1015,13 @@ def main() -> None:
     if not args.bez_predpovede:
         fc = Forecast()
         ForecastCollector(Shmu(args.zdroj), fc).start()
+    gauges = rad = None
+    if not args.bez_zrazkomerov:
+        gauges = GaugeCollector(Shmu(args.zdroj), max(30, args.interval))
+        gauges.start()
+    if not args.bez_radaru:
+        rad = RadarCollector(Shmu(args.zdroj), HERE / "_radar")
+        rad.start()
 
     wu_file = Path(args.wu_subor)
     wset = wu.Settings(wu_file)
@@ -918,7 +1035,7 @@ def main() -> None:
         log(f"Weather Underground: pripájam stanicu {wset.data.get('stanica')}.")
 
     try:
-        httpd = ThreadingHTTPServer((args.host, args.port), make_handler(store, stations, fc, wux))
+        httpd = ThreadingHTTPServer((args.host, args.port), make_handler(store, stations, fc, wux, gauges, rad))
     except OSError as err:
         sys.exit(f"Port {args.port} sa nedá použiť ({err}). Skúste napr.: python server.py --port 8080")
     shown = "localhost" if args.host in ("127.0.0.1", "0.0.0.0") else args.host

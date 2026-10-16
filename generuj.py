@@ -23,6 +23,7 @@ import gzip
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import time
@@ -30,13 +31,19 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import aladin
+import historia as hist
+import radar
 import server as srv
 import wunderground as wu
+import zrazkomery as zr
 
 HERE = Path(__file__).resolve().parent
 KEEP_MINUTES = 80 * 60        # minútové merania: posledných 80 minút
 KEEP_BINS = 25 * 3600         # 10-minútové súhrny: posledných 25 hodín
+KEEP_DAYS = 8                 # hodinové súhrny pre grafy na niekoľko dní
+OLDER_PER_RUN = 24            # koľko starších súborov (história dní) stiahnuť za jeden beh
 MAX_FILES_PER_RUN = 72        # strop sťahovania, keby GitHub dlho nespúšťal
+ZR_OLDER_PER_RUN = 36         # zrážkomery: koľko starších súborov (úhrny za predošlé dni) za jeden beh
 WU_RUNS_PER_DAY = 144
 FORECAST_FORMAT = 2           # zvýšiť pri zmene tvaru uložených polí predpovede (vynúti nové spracovanie)
 
@@ -82,25 +89,10 @@ def load(path: Path, default):
 # Merania SHMÚ: minúty za poslednú hodinu + 10-minútové súhrny za 25 hodín
 # --------------------------------------------------------------------------
 
-I_T, I_RH, I_P, I_WS, I_WG, I_WD, I_RAIN = (srv.IDX[k] for k in
-                                             ("t", "vlh_rel", "tlak", "vie_pr_rych", "vie_max_rych", "vie_pr_smer", "zra_uhrn"))
-I_SOL = srv.IDX["zglo"]
+I_T, I_RAIN = hist.I_T, hist.I_RAIN
 # súhrn košíka: t, vlh, tlak, vietor, náraz max, smer, zrážky súčet, zrážky minút, žiarenie, t min, t max, minút spolu
-B_T, B_RH, B_P, B_WS, B_WG, B_WD, B_RAIN, B_RAIN_N, B_SOL, B_TMIN, B_TMAX, B_N = range(12)
-
-
-def summarize(rows: list[tuple]) -> list:
-    def vals(i):
-        return [r[i] for r in rows if r[i] is not None]
-
-    def mean(i):
-        v = vals(i)
-        return round(sum(v) / len(v), 2) if v else None
-
-    t, g, rain = vals(I_T), vals(I_WG), vals(I_RAIN)
-    return [mean(I_T), mean(I_RH), mean(I_P), mean(I_WS), max(g) if g else None,
-            srv.circular_mean(vals(I_WD)), round(sum(rain), 2) if rain else None, len(rain),
-            mean(I_SOL), min(t) if t else None, max(t) if t else None, len(rows)]
+B_RAIN, B_RAIN_N, B_TMIN, B_TMAX, B_N = hist.B_RAIN, hist.B_RAIN_N, hist.B_TMIN, hist.B_TMAX, hist.B_N
+summarize = hist.summarize
 
 
 class Observations:
@@ -109,12 +101,17 @@ class Observations:
             int(sid): {int(r[0]): tuple(r[1:]) for r in rows} for sid, rows in state.get("minuty", {}).items()}
         self.bins: dict[int, dict[int, list]] = {
             int(sid): {int(ts): v for ts, v in b.items()} for sid, b in state.get("kosiky", {}).items()}
+        # hodinové súhrny pre grafy na niekoľko dní (staršie než 10-minútové košíky)
+        self.hours: dict[int, dict[int, list]] = {
+            int(sid): {int(ts): v for ts, v in b.items()} for sid, b in state.get("hodiny", {}).items()}
+        self.older: set[str] = set(state.get("starsie", []))       # spracované staršie súbory (história dní)
+        self.older_days: set[str] = set(state.get("starsieDni", []))  # dni, ktoré sú už doplnené
         self.latest_raw: dict[int, tuple[int, dict]] = {
             int(sid): (int(v[0]), v[1]) for sid, v in state.get("posledny", {}).items()}
         self.processed: set[str] = set(state.get("spracovane", []))
         self.newest_file: str | None = state.get("najnovsiSubor")
 
-    def ingest(self, path: str, records: list[dict]) -> None:
+    def ingest(self, path: str, records: list[dict], track: bool = True) -> None:
         for rec in records:
             try:
                 sid = int(rec.get("ind_kli"))
@@ -127,6 +124,8 @@ class Observations:
             prev = self.latest_raw.get(sid)
             if prev is None or ts >= prev[0]:
                 self.latest_raw[sid] = (ts, rec)
+        if not track:   # staršie súbory pre históriu dní nemenia "najnovší súbor"
+            return
         self.processed.add(path)
         name = path.rpartition("/")[2]
         if self.newest_file is None or name > self.newest_file.rpartition("/")[2]:
@@ -135,6 +134,8 @@ class Observations:
     def finish(self) -> None:
         """Prepočíta 10-minútové súhrny z minút a odstráni staré dáta."""
         newest = max((max(m) for m in self.minutes.values() if m), default=0)
+        if not newest:
+            return
         for sid, mins in self.minutes.items():
             groups: dict[int, list] = {}
             for ts, v in mins.items():
@@ -151,20 +152,33 @@ class Observations:
                 del self.minutes[sid]
         for sid in list(self.bins):
             b = self.bins[sid]
-            for ts in [t for t in b if t < newest - KEEP_BINS]:
-                del b[ts]
+            hist.roll_into_hours(b, self.hours.setdefault(sid, {}), newest - KEEP_BINS)
             if not b:
                 del self.bins[sid]
+        for sid in list(self.hours):
+            h = self.hours[sid]
+            for ts in [t for t in h if t < newest - KEEP_DAYS * 86400]:
+                del h[ts]
+            if not h:
+                del self.hours[sid]
 
     def to_state(self, recent_files: list[str]) -> dict:
         keep = set(recent_files)
+        oldest = hist.day_label(time.time() - (KEEP_DAYS + 1) * 86400).replace("-", "")
         return {
             "minuty": {str(s): [[ts, *v] for ts, v in sorted(m.items())] for s, m in self.minutes.items()},
             "kosiky": {str(s): {str(ts): v for ts, v in sorted(b.items())} for s, b in self.bins.items()},
+            "hodiny": {str(s): {str(ts): v for ts, v in sorted(b.items())} for s, b in self.hours.items()},
             "posledny": {str(s): [ts, rec] for s, (ts, rec) in self.latest_raw.items()},
             "spracovane": sorted(p for p in self.processed if p in keep),
+            "starsie": sorted(p for p in self.older if _file_day(p) >= oldest),
+            "starsieDni": sorted(d for d in self.older_days if d >= oldest),
             "najnovsiSubor": self.newest_file,
         }
+
+    def day_items(self, sid: int) -> list[tuple[int, list, int]]:
+        return ([(ts, b, 3600) for ts, b in sorted(self.hours.get(sid, {}).items())] +
+                [(ts, b, 600) for ts, b in sorted(self.bins.get(sid, {}).items())])
 
     # výstupy v rovnakom tvare ako /api/current a /api/station/<id> lokálneho servera
     def current(self, catalog: dict[int, dict]) -> tuple[list[dict], int]:
@@ -195,6 +209,7 @@ class Observations:
             r24 = sum(b[B_RAIN] or 0 for b in day)
             tmins = [b[B_TMIN] for b in day if b[B_TMIN] is not None]
             tmaxs = [b[B_TMAX] for b in day if b[B_TMAX] is not None]
+            today = hist.daily([(ts, b, 600) for ts, b in bins if ts >= hist.day_start(last_ts)], until=last_ts + 60)
             raw = self.latest_raw.get(sid, (None, {}))[1]
             soil = {d: srv.num(raw.get(f"t_pod{d}")) for d in (5, 10, 20, 50, 100)}
             meta = catalog.get(sid, {})
@@ -204,6 +219,7 @@ class Observations:
                 "cas": last_ts, "hodnoty": latest,
                 "zmenaTeploty1h": None if t_hour is None or "t" not in latest else round(latest["t"] - t_hour, 1),
                 "tMin24": min(tmins) if tmins else None, "tMax24": max(tmaxs) if tmaxs else None,
+                "dnes": today[-1] if today else None,
                 "zrazky1h": {"mm": round(sum(r1), 2), "pokrytie": round(min(len(r1) / 60, 1), 2)} if r1 else None,
                 "zrazky24h": {"mm": round(r24, 2), "pokrytie": round(min(r24n / 1440, 1), 2)} if r24n else None,
                 "poda": {k: v for k, v in soil.items() if v is not None},
@@ -212,22 +228,13 @@ class Observations:
         return out, newest_all
 
     def series(self, sid: int, catalog: dict[int, dict]) -> dict:
-        bins = sorted(self.bins.get(sid, {}).items())
-        cols = {k: [] for k in ("cas", "t", "vlh", "tlak", "vietor", "naraz", "smer", "zrazky", "zrazkyMinut", "ziarenie")}
-        for ts, b in bins:
-            cols["cas"].append(ts + 300)
-            cols["t"].append(b[B_T])
-            cols["vlh"].append(b[B_RH])
-            cols["tlak"].append(b[B_P])
-            cols["vietor"].append(b[B_WS])
-            cols["naraz"].append(b[B_WG])
-            cols["smer"].append(b[B_WD])
-            cols["zrazky"].append(b[B_RAIN] if b[B_RAIN_N] else None)
-            cols["zrazkyMinut"].append(b[B_RAIN_N])
-            cols["ziarenie"].append(b[B_SOL])
+        cols = hist.series_columns(sorted(self.bins.get(sid, {}).items()), 600)
+        hours = hist.series_columns(sorted(self.hours.get(sid, {}).items()), 3600)
         meta = catalog.get(sid, {})
+        mins = self.minutes.get(sid)
         return {"id": sid, "nazov": meta.get("nazov"), "vyska": meta.get("vyska"), "vyskaTlak": meta.get("vyskaTlak"),
-                "lat": meta.get("lat"), "lon": meta.get("lon"), "rady": cols}
+                "lat": meta.get("lat"), "lon": meta.get("lon"), "rady": cols, "radyHod": hours,
+                "dni": hist.daily(self.day_items(sid), until=max(mins) + 60 if mins else None)}
 
 
 def update_observations(shmu: srv.Shmu, obs: Observations) -> tuple[list[str], dict]:
@@ -256,8 +263,59 @@ def update_observations(shmu: srv.Shmu, obs: Observations) -> tuple[list[str], d
             log(f"SHMÚ: preskakujem {path.rpartition('/')[2]}: {err}")
             obs.processed.add(path)
     status["historia"] = {"hotovo": ok, "spolu": len(plan)}
+    if obs.processed and len(plan) < MAX_FILES_PER_RUN // 2:
+        try:
+            backfill_days(shmu, obs, files)
+        except Exception as err:
+            log(f"SHMÚ: história dní: {err}")
     obs.finish()
     return files, status
+
+
+def _file_day(path: str) -> str:
+    """Deň z cesty k súboru (názov denného priečinka RRRRMMDD)."""
+    return path.rsplit("/", 2)[-2] if path.count("/") >= 2 else ""
+
+
+def _half_hour(path: str) -> bool:
+    """Súbor s meraniami končiacimi o celej alebo o pol hodine (vzorka pre staršie dni)."""
+    m = re.search(r" \d{2}-(\d{2})-\d{2}\.json$", path)
+    return bool(m) and int(m.group(1)) % 30 == 0
+
+
+def backfill_days(shmu: srv.Shmu, obs: Observations, files: list[str]) -> None:
+    """Postupne doplní históriu za posledných KEEP_DAYS dní: súbor každých 30 minút.
+
+    Každý beh stiahne najviac OLDER_PER_RUN súborov, takže celý týždeň sa doplní
+    asi za 2 hodiny a potom sa už nesťahuje nič navyše.
+    """
+    oldest = hist.day_label(time.time() - (KEEP_DAYS + 1) * 86400).replace("-", "")
+    recent = set(files[-288:])
+    plan = [p for p in files[:-288] if _half_hour(p) and p not in obs.older and p not in recent][::-1]
+    if len(plan) < OLDER_PER_RUN:
+        days = sorted((e.rstrip("/") for e in shmu.listing(srv.OBS_PATH) if srv.DAY_RE.match(e)), reverse=True)
+        recent_days = {_file_day(p) for p in files}
+        for day in days:
+            if day < oldest or len(plan) >= OLDER_PER_RUN:
+                break
+            if day in recent_days or day in obs.older_days:
+                continue
+            folder = f"{srv.OBS_PATH}/{day}"
+            todo = [f"{folder}/{n}" for n in shmu.listing(folder) if srv.FILE_RE.match(n)]
+            todo = [p for p in sorted(todo, reverse=True) if _half_hour(p) and p not in obs.older]
+            if not todo:
+                obs.older_days.add(day)
+            plan.extend(todo)
+    plan = plan[:OLDER_PER_RUN]
+    if not plan:
+        return
+    log(f"SHMÚ: dopĺňam históriu dní, {len(plan)} starších súborov.")
+    for path in plan:
+        try:
+            obs.ingest(path, shmu.snapshot(path), track=False)
+        except Exception as err:
+            log(f"SHMÚ: preskakujem {path.rpartition('/')[2]}: {err}")
+        obs.older.add(path)
 
 
 # --------------------------------------------------------------------------
@@ -544,6 +602,8 @@ def main() -> None:
     ap.add_argument("--zdroj", default=os.environ.get("SHMU_BASE_URL", "https://opendata.shmu.sk"), help=argparse.SUPPRESS)
     ap.add_argument("--bez-predpovede", action="store_true")
     ap.add_argument("--bez-icon", action="store_true", help="nesťahovať mapu ICON z Open-Meteo")
+    ap.add_argument("--bez-radaru", action="store_true", help="nesťahovať snímky radaru")
+    ap.add_argument("--bez-zrazkomerov", action="store_true", help="nesťahovať údaje zrážkomerných staníc")
     args = ap.parse_args()
 
     stav_dir, out = Path(args.stav), Path(args.vystup)
@@ -565,8 +625,16 @@ def main() -> None:
         icon_dir.mkdir(parents=True, exist_ok=True)
         icon_status = update_icon(icon_dir, icon_state)
 
+    # zrážkomerné stanice a radar
+    gauges = zr.Gauges(state.get("zrazkomery", {}))
+    gauge_files, gauge_status = [], {"stav": "vypnute"}
+    if not args.bez_zrazkomerov:
+        gauge_files, gauge_status = zr.update(shmu, gauges, older=ZR_OLDER_PER_RUN, log=log)
+    radar_dir = stav_dir / "radar"
+    radar_meta = None if args.bez_radaru else radar.update(shmu, radar_dir, log=log)
+
     stations, newest = obs.current(catalog)
-    fresh = [s for s in stations if s["lat"] is not None and "t" in s["hodnoty"]]
+    fresh =[s for s in stations if s["lat"] is not None and "t" in s["hodnoty"]]
 
     def shmu_temp(lat, lon, ts):
         best = None
@@ -642,7 +710,18 @@ def main() -> None:
             if src.exists():
                 shutil.copyfile(src, data / "icon" / f"predpoved-{name}.json")
 
-    state = {"verzia": 1, "merania": obs.to_state(files), "predpoved": fc_state, "icon": icon_state, "wu": wu_state}
+    if not args.bez_zrazkomerov:
+        glist, gnewest = gauges.build(zr.load_catalog())
+        dump(data / "zrazkomery.json", {"generovane": generated, "stav": gauge_status, "najnovsieMeranie": gnewest or None,
+                                        "stanice": glist})
+    if radar_meta:
+        (data / "radar").mkdir(parents=True, exist_ok=True)
+        for f in radar_meta.get("snimky", []):
+            shutil.copyfile(radar_dir / f["subor"], data / "radar" / f["subor"])
+        dump(data / "radar.json", radar_meta)
+
+    state = {"verzia": 1, "merania": obs.to_state(files), "predpoved": fc_state, "icon": icon_state, "wu": wu_state,
+             "zrazkomery": gauges.to_state(gauge_files) if gauge_files else state.get("zrazkomery", {})}
     dump(stav_dir / "stav.json.gz", state, gz=True)
     log(f"Hotovo: {len(stations)} staníc SHMÚ, {len(amateurs)} amatérskych, "
         f"najnovšie meranie {datetime.fromtimestamp(newest, timezone.utc).strftime('%H:%M UTC') if newest else '—'}.")

@@ -90,8 +90,9 @@ h1 {
 .banner.bad { border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); background: color-mix(in srgb, var(--bad) 9%, var(--surface)); }
 
 /* Extrémy */
-.extremes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 900px) { .extremes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.extremes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1240px) { .extremes { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .extremes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .extreme {
   text-align: left; cursor: pointer; border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; min-width: 0;
@@ -230,6 +231,35 @@ td.name .idx { font-size: 12px; color: var(--muted); margin-left: 6px; }
 .chart-tip .sw { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
 .chart-note { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
 .empty { padding: 28px 8px; text-align: center; color: var(--muted); }
+.chart-segs { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 10px; }
+.range-seg button { padding: 5px 9px; }
+.chart .band { opacity: .16; }
+.chart .ext text { font-family: var(--font-data); font-size: 10.5px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.today { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13.5px; }
+.today b { font-family: var(--font-data); font-weight: 600; }
+.today .hi { color: var(--c-temp); }
+.today .lo { color: var(--c-dew); }
+.days { margin-top: 14px; }
+.days-scroll { overflow-x: auto; }
+.days table { font-size: 13.5px; }
+.days th, .days td { padding: 5px 6px; }
+.days td:first-child { text-transform: capitalize; }
+.days tbody tr { cursor: default; }
+.days tbody tr:hover { background: none; }
+
+/* Radar a zrážkomery */
+.rd-map { position: relative; }
+.rd-map canvas { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.rd-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.rd-tools .seg { margin-top: 0; }
+.rd-tools .seg button { padding: 3px 10px; font-size: 13px; }
+.rd-table { margin-top: 14px; }
+.rd-table .table-scroll { max-height: min(460px, 70vh); }
+.rd-table td.name { max-width: 240px; }
+.rd-more { margin-top: 10px; }
+.rd-table tbody tr { cursor: default; }
+.rd-table tbody tr:hover { background: none; }
+.mm0 { color: var(--muted); }
 
 /* Predpoveď */
 .fc-head-seg { margin-top: 0; }
@@ -336,6 +366,41 @@ footer a { color: inherit; }
     </div>
   </div>
 
+  <section class="panel" id="radar" aria-labelledby="rdTitle">
+    <div class="panel-head">
+      <div>
+        <h2 id="rdTitle">Radar a zrážkomery</h2>
+        <p class="fc-run" id="rdRun">Načítavam snímky radaru…</p>
+      </div>
+      <div class="seg fc-head-seg" id="rdPeriods" role="group" aria-label="Úhrn na zrážkomeroch"></div>
+    </div>
+    <div class="rd-map" id="rdMap"><canvas id="rdCanvas" role="img" aria-label="Mapa radaru a úhrnov zrážok na zrážkomerných staniciach"></canvas></div>
+    <div class="fc-controls">
+      <button type="button" class="btn" id="rdPlay" aria-pressed="false"></button>
+      <input type="range" id="rdSlider" min="0" max="0" value="0" step="1" aria-label="Čas snímky radaru">
+      <div class="fc-time"><b id="rdTime">—</b><span id="rdAgo"></span></div>
+    </div>
+    <div class="fc-legend" id="rdLegend"></div>
+    <div class="rd-tools">
+      <label class="toggle"><input type="checkbox" id="rdGauges" checked> Úhrny na zrážkomeroch</label>
+      <label class="toggle"><input type="checkbox" id="rdShowRadar" checked> Radar</label>
+    </div>
+    <p class="chart-note" id="rdNote"></p>
+    <div class="rd-table">
+      <div class="panel-head" style="margin-bottom:8px">
+        <div class="label" id="rdTableTitle">Zrážkomerné stanice</div>
+        <input id="rdSearch" class="search" type="search" placeholder="Hľadať zrážkomer" aria-label="Hľadať zrážkomernú stanicu" autocomplete="off" style="max-width:260px">
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr id="rdHead"></tr></thead>
+          <tbody id="rdBody"></tbody>
+        </table>
+      </div>
+      <p class="table-note" id="rdTableNote"></p>
+    </div>
+  </section>
+
   <section class="panel wu-panel" id="wuPanel" aria-labelledby="wuTitle">
     <div class="panel-head">
       <h2 id="wuTitle">Moja stanica na Weather Underground</h2>
@@ -414,12 +479,18 @@ const URLS = STATIC_MODE ? {
   forecast: (m) => `${FC_MODELS[m].dir}predpoved.json?t=${Math.floor(Date.now() / 600000)}`,
   field: (name, m) => `${FC_MODELS[m].dir}predpoved-${name}.json?t=${runTag(m)}`,
   points: () => `data/predpoved-body.json?t=${runTag("aladin")}-${(state.data && state.data.generovane) || 0}`,
+  radar: () => `data/radar.json?t=${minuteTag()}`,
+  radarFrame: (name) => `data/radar/${name}`,
+  gauges: () => `data/zrazkomery.json?t=${minuteTag()}`,
 } : {
   current: () => "/api/current",
   station: (id) => `/api/station/${id}`,
   forecast: () => "/api/forecast",
   field: (name) => `/api/forecast/pole/${name}`,
   point: (s) => `/api/forecast/bod?lat=${s.lat}&lon=${s.lon}`,
+  radar: () => "/api/radar",
+  radarFrame: (name) => `/api/radar/${name}`,
+  gauges: () => "/api/zrazkomery",
 };
 
 /* ---------- Pomocné funkcie ---------- */
@@ -566,7 +637,10 @@ const state = {
   stationCas: null,
   showWu: store.get("pocasie.wu") !== "0",
   mapZoom: store.get("pocasie.zoom") === "1",
+  range: [1, 3, 7].includes(Number(store.get("pocasie.rozsah"))) ? Number(store.get("pocasie.rozsah")) : 1,
 };
+// Obdobie grafu stanice v dňoch
+const RANGES = [{ d: 1, label: "24 h" }, { d: 3, label: "3 dni" }, { d: 7, label: "7 dní" }];
 const isWu = (s) => s && s.zdroj === "wu";
 function amateurs() { return (state.data && state.data.amaterske) || []; }
 function allStations() { return [...state.data.stanice, ...(state.showWu ? amateurs() : [])]; }
@@ -687,15 +761,21 @@ function renderExtremes() {
     if (v === null || v === undefined) return acc;
     return !acc || cmp(v, acc.v) ? { s, v } : acc;
   }, null);
+  // denné extrémy len zo staníc, ktoré dnes merali aspoň polovicu času (inak by boli zavádzajúce)
+  const today = (s) => (s.dnes && s.dnes.pokrytie >= 0.5 ? s.dnes : null);
+  const hiToday = best((s) => today(s)?.tMax, (a, b) => a > b), loToday = best((s) => today(s)?.tMin, (a, b) => a < b);
+  const at = (hit, key) => (hit && hit.s.dnes[key] ? ` · ${hhmm(hit.s.dnes[key])}` : "");
   const items = [
     ["Najteplejšie", best((s) => s.hodnoty.t, (a, b) => a > b), (v) => fmt(v), "°C"],
     ["Najchladnejšie", best((s) => s.hodnoty.t, (a, b) => a < b), (v) => fmt(v), "°C"],
+    ["Dnešné maximum", hiToday, (v) => fmt(v), "°C", at(hiToday, "tMaxCas")],
+    ["Dnešné minimum", loToday, (v) => fmt(v), "°C", at(loToday, "tMinCas")],
     ["Najsilnejší náraz vetra", best((s) => s.hodnoty.vie_max_rych, (a, b) => a > b), (v) => fmt(v), "m/s"],
     ["Najviac zrážok za hodinu", best((s) => s.zrazky1h ? s.zrazky1h.mm : null, (a, b) => a > b), (v) => fmt(v), "mm"],
   ];
   const box = $("#extremes");
   box.innerHTML = "";
-  for (const [label, hit, f, unit] of items) {
+  for (const [label, hit, f, unit, when = ""] of items) {
     const b = document.createElement("button");
     b.className = "extreme";
     b.type = "button";
@@ -703,7 +783,7 @@ function renderExtremes() {
       b.disabled = true;
       b.innerHTML = `<span class="label">${label}</span><span class="val">0<small>mm</small></span><span class="where">za poslednú hodinu nikde nepršalo</span>`;
     } else if (hit) {
-      b.innerHTML = `<span class="label">${label}</span><span class="val">${f(hit.v)}<small>${unit}</small></span><span class="where">${esc(stName(hit.s))}</span>`;
+      b.innerHTML = `<span class="label">${label}</span><span class="val">${f(hit.v)}<small>${unit}</small></span><span class="where">${esc(stName(hit.s))}${when}</span>`;
       b.addEventListener("click", () => select(hit.s.id, true));
       b.title = `Zobraziť stanicu ${stName(hit.s)}`;
     } else {
@@ -1055,6 +1135,11 @@ function renderDetail() {
   const trendHtml = trend === null || trend === undefined ? "" :
     `<span class="trend ${trend > 0.2 ? "up" : trend < -0.2 ? "down" : ""}">${trend > 0 ? "▲" : trend < 0 ? "▼" : "■"} ${fmt(Math.abs(trend))} °C za hodinu</span>`;
   const weather = wx(v.stav_poc);
+  const dn = s.dnes;
+  const approx = dn && dn.pokrytie < 0.9 ? "≈" : "";
+  const todayHtml = dn && dn.tMax !== null && dn.tMax !== undefined
+    ? `<span class="today"><span class="muted">Dnes</span><span class="hi">max <b>${approx}${fmt(dn.tMax)}</b> °C${dn.tMaxCas ? ` o ${hhmm(dn.tMaxCas)}` : ""}</span><span class="lo">min <b>${approx}${fmt(dn.tMin)}</b> °C${dn.tMinCas ? ` o ${hhmm(dn.tMinCas)}` : ""}</span></span>`
+    : "";
   const [visV, visU] = visibility(v.dohl);
   const rain = (r) => r ? `${fmt(r.mm, 1)}<small>mm</small>` : "—";
   const rainHint = (r, span) => r && r.pokrytie < 0.9 ? `<span class="hint">z ${Math.round(r.pokrytie * 100)} % ${span}</span>` : "";
@@ -1121,15 +1206,20 @@ function renderDetail() {
       <div class="hero-side">
         ${weather ? `<span class="wx">${weather}</span>` : ""}
         ${trendHtml}
+        ${todayHtml}
       </div>
     </div>
     ${qcHtml}
     <div class="readouts">${cells.join("")}</div>
     ${soilHtml}
-    <div class="seg" id="chartSeg" role="group" aria-label="Graf za posledných 24 hodín">${seg}</div>
+    <div class="chart-segs">
+      <div class="seg" id="chartSeg" role="group" aria-label="Veličina v grafe">${seg}</div>
+      ${wuSt ? "" : `<div class="seg range-seg" id="rangeSeg" role="group" aria-label="Obdobie grafu">${RANGES.map((r) => `<button type="button" data-r="${r.d}" aria-pressed="${state.range === r.d}">${r.label}</button>`).join("")}</div>`}
+    </div>
     <div class="chart-tip" id="chartTip"></div>
     <div class="chart" id="chart"><div class="empty">Načítavam priebeh…</div></div>
     <p class="chart-note" id="chartNote"></p>
+    <div class="days" id="days"></div>
     <div class="fc-station" id="fcStation" hidden>
       <div class="fc-st-head">
         <div class="label">Predpoveď pre túto stanicu</div>
@@ -1141,6 +1231,11 @@ function renderDetail() {
     </div>`;
   box.querySelectorAll("#chartSeg button").forEach((b) => b.addEventListener("click", () => {
     state.chart = b.dataset.k; store.set("pocasie.graf", state.chart); renderDetail();
+  }));
+  box.querySelectorAll("#rangeSeg button").forEach((b) => b.addEventListener("click", () => {
+    state.range = Number(b.dataset.r); store.set("pocasie.rozsah", String(state.range));
+    box.querySelectorAll("#rangeSeg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    if (state.stationData && state.stationFor === s.id) renderChart();
   }));
   box.querySelectorAll("#fcStSeg button").forEach((b) => b.addEventListener("click", () => {
     state.fcChart = b.dataset.k; store.set("pocasie.fcgraf", state.fcChart);
@@ -1156,10 +1251,81 @@ function niceStep(span, target) {
   const raw = span / target, p = 10 ** Math.floor(Math.log10(raw)), n = raw / p;
   return (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * p;
 }
+const has = (v) => v !== null && v !== undefined;
+/* Hodinové rady pre graf na niekoľko dní: staršie hodinové súhrny a novšie 10-minútové spojené do hodín */
+function hourlySeries(sd) {
+  const MEAN = ["t", "vlh", "tlak", "vietor"], hours = new Map();
+  const add = (h, src, i, w) => {
+    let e = hours.get(h);
+    if (!e) { e = { s: {}, w: {}, naraz: null, zrazky: null, rMin: 0, tMin: null, tMax: null }; hours.set(h, e); }
+    for (const k of MEAN) {
+      const v = src[k] && src[k][i];
+      if (has(v)) { e.s[k] = (e.s[k] || 0) + v * w; e.w[k] = (e.w[k] || 0) + w; }
+    }
+    const g = src.naraz[i], r = src.zrazky[i];
+    if (has(g)) e.naraz = e.naraz === null ? g : Math.max(e.naraz, g);
+    if (has(r)) e.zrazky = (e.zrazky || 0) + r;
+    e.rMin += src.zrazkyMinut[i] || 0;
+    const lo = src.tMin && has(src.tMin[i]) ? src.tMin[i] : src.t[i], hi = src.tMax && has(src.tMax[i]) ? src.tMax[i] : src.t[i];
+    if (has(lo)) e.tMin = e.tMin === null ? lo : Math.min(e.tMin, lo);
+    if (has(hi)) e.tMax = e.tMax === null ? hi : Math.max(e.tMax, hi);
+  };
+  const Hs = sd.radyHod, R = sd.rady;
+  if (Hs) Hs.cas.forEach((c, i) => add(c - 1800, Hs, i, Math.max(1, (Hs.zrazkyMinut[i] || 10) / 10)));
+  R.cas.forEach((c, i) => add(Math.floor((c - 300) / 3600) * 3600, R, i, 1));
+  const out = { cas: [], t: [], vlh: [], tlak: [], vietor: [], naraz: [], zrazky: [], pokrytie: [], tMin: [], tMax: [] };
+  for (const h of [...hours.keys()].sort((a, b) => a - b)) {
+    const e = hours.get(h);
+    out.cas.push(h + 1800);
+    for (const k of MEAN) out[k].push(e.w[k] ? e.s[k] / e.w[k] : null);
+    out.naraz.push(e.naraz);
+    out.zrazky.push(e.zrazky === null ? null : Math.round(e.zrazky * 100) / 100);
+    out.pokrytie.push(Math.min(1, e.rMin / 60));
+    out.tMin.push(e.tMin); out.tMax.push(e.tMax);
+  }
+  return out;
+}
+
+function dayName(start, withDate = true) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(start * 1000), diff = Math.round((today - d) / 86400000);
+  if (diff === 0) return "dnes";
+  if (diff === 1) return "včera";
+  return d.toLocaleDateString(LOCALE, withDate ? { weekday: "short", day: "numeric", month: "numeric" } : { weekday: "short" });
+}
+
+function renderDays(sd) {
+  const box = $("#days");
+  if (!box) return;
+  const days = (sd.dni || []).filter((x) => has(x.tMax) || has(x.zrazky)).slice(-8).reverse();
+  if (!days.length) { box.innerHTML = ""; return; }
+  let approx = false, partialRain = false;
+  const rows = days.map((x) => {
+    const a = x.pokrytie < 0.9 ? "≈" : "";
+    if (a) approx = true;
+    let rain;
+    if (!has(x.zrazky)) rain = "—";
+    else if (x.pokrytieZrazok < 0.5) { rain = `<span class="muted">neúplné</span>`; partialRain = true; }
+    else rain = `${x.pokrytieZrazok < 0.9 ? "≈" : ""}${fmt(x.zrazky, 1)}`;
+    return `<tr><td>${dayName(x.zaciatok)}</td>
+      <td class="num">${has(x.tMin) ? a + fmt(x.tMin) : "—"}</td><td class="num">${has(x.tMax) ? a + fmt(x.tMax) : "—"}</td>
+      <td class="num">${rain}</td><td class="num">${fmt(x.naraz)}</td></tr>`;
+  }).join("");
+  const notes = [];
+  if (approx) notes.push("≈ deň nie je pokrytý úplne; staršie dni sa dopĺňajú zo vzoriek každých 30 minút, skutočné maximum a minimum preto môže byť o niečo výraznejšie.");
+  if (partialRain) notes.push("Úhrn zrážok je pri neúplných dňoch vynechaný; úplné denné úhrny ukazujú zrážkomery v časti Radar a zrážkomery.");
+  box.innerHTML = `<div class="label">Posledné dni</div>
+    <div class="days-scroll"><table><thead><tr><th scope="col">Deň</th><th scope="col">Min °C</th><th scope="col">Max °C</th><th scope="col">Zrážky mm</th><th scope="col">Náraz m/s</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>${notes.length ? `<p class="chart-note">${notes.join(" ")}</p>` : ""}`;
+}
+
 function renderChart() {
-  const d = state.stationData.rady, kind = state.chart, cfg = CHARTS[kind];
+  const sd = state.stationData, kind = state.chart, cfg = CHARTS[kind];
+  const multi = state.range > 1 && !!sd.radyHod;
+  const d = multi ? hourlySeries(sd) : sd.rady, step = multi ? 3600 : 600;
   const times = d.cas;
   const box = $("#chart"), tip = $("#chartTip"), note = $("#chartNote");
+  renderDays(sd);
   if (!times.length) { box.innerHTML = `<div class="empty">Zatiaľ bez priebehu.</div>`; return; }
 
   const dew = d.t.map((t, i) => dewPoint(t, d.vlh[i]));
@@ -1170,65 +1336,122 @@ function renderChart() {
   const series = {
     t: [{ name: "Teplota", color: "var(--c-temp)", v: d.t }, { name: "Rosný bod", color: "var(--c-dew)", v: dew, dash: "5 4" }],
     vietor: [{ name: "Priemerná rýchlosť", color: "var(--c-wind)", v: d.vietor }, { name: "Nárazy", color: "var(--c-gust)", v: d.naraz, dash: "5 4" }],
-    zrazky: [{ name: "Zrážky za 10 min", color: "var(--c-rain)", v: d.zrazky, bars: true }],
+    zrazky: [{ name: multi ? "Zrážky za hodinu" : "Zrážky za 10 min", color: "var(--c-rain)", v: d.zrazky, bars: true }],
     tlak: [{ name: reduce ? "Tlak na hladine mora" : isWu(selSt) ? "Tlak" : "Tlak na stanici", color: "var(--c-press)", v: press }],
     vlh: [{ name: "Relatívna vlhkosť", color: "var(--c-hum)", v: d.vlh }],
   }[kind];
 
-  const all = series.flatMap((s) => s.v).filter((x) => x !== null && x !== undefined);
+  const x1 = times[times.length - 1];
+  const x0 = multi ? x1 - state.range * 86400 : Math.min(times[0], x1 - 86400);
+  const shown = (i) => times[i] >= x0 - step;
+  const band = multi && kind === "t";
+  const all = series.flatMap((s) => s.v.filter((x, i) => shown(i) && has(x)))
+    .concat(band ? [...d.tMin, ...d.tMax].filter((x, i) => shown(i % times.length) && has(x)) : []);
   if (!all.length) {
     box.innerHTML = `<div class="empty">Táto stanica ${cfg.label.toLowerCase()} nemeria.</div>`;
     tip.innerHTML = ""; note.textContent = ""; return;
   }
-  const W = Math.max(300, Math.round(box.clientWidth || 640)), H = W < 500 ? 200 : 230, m = { l: 40, r: 10, t: 10, b: 26 };
-  const x0 = Math.min(times[0], times[times.length - 1] - 86400), x1 = times[times.length - 1];
+  const W = Math.max(300, Math.round(box.clientWidth || 640)), H = W < 500 ? 200 : 230, m = { l: 40, r: 10, t: kind === "t" ? 18 : 10, b: 26 };
   let lo = Math.min(...all), hi = Math.max(...all);
   if (kind === "zrazky" || kind === "vietor") lo = 0;
   if (kind === "zrazky") hi = Math.max(hi, 0.5);
   if (kind === "vlh") { lo = Math.max(0, Math.min(lo, 40)); hi = 100; }
   if (hi - lo < 1) { hi += 0.5; lo -= kind === "zrazky" || kind === "vietor" ? 0 : 0.5; }
-  const step = niceStep(hi - lo, 4);
-  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const yStep = niceStep(hi - lo, 4);
+  lo = Math.floor(lo / yStep) * yStep; hi = Math.ceil(hi / yStep) * yStep;
   const X = (t) => m.l + ((t - x0) / (x1 - x0)) * (W - m.l - m.r);
   const Y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
 
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${cfg.label} za posledných 24 hodín` });
+  const rangeLabel = multi ? `za posledných ${state.range} dní` : "za posledných 24 hodín";
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${cfg.label} ${rangeLabel}` });
+  const defs = el("defs"), clipId = `chartClip${kind}`;
+  const clip = el("clipPath", { id: clipId });
+  clip.append(el("rect", { x: m.l, y: 0, width: W - m.l - m.r, height: H }));
+  defs.append(clip); svg.append(defs);
   const axis = el("g", { class: "axis" });
-  const decimals = step < 1 ? 1 : 0;
-  for (let v = lo; v <= hi + step / 2; v += step) {
+  const decimals = yStep < 1 ? 1 : 0;
+  for (let v = lo; v <= hi + yStep / 2; v += yStep) {
     axis.append(el("line", { class: "gridline", x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }));
     axis.append(el("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }, fmt(v, decimals)));
   }
-  const tickStep = W < 500 ? 21600 : 10800;
-  for (let t = Math.ceil(x0 / tickStep) * tickStep; t <= x1; t += tickStep) {
-    const x = X(t);
-    if (x < m.l + 14 || x > W - m.r - 14) continue;
-    axis.append(el("line", { class: "gridline", x1: x, x2: x, y1: m.t, y2: H - m.b }));
-    axis.append(el("text", { x, y: H - 8, "text-anchor": "middle" }, hhmm(t)));
+  if (multi) {
+    // polnoci a názvy dní
+    const day = new Date(x0 * 1000); day.setHours(24, 0, 0, 0);
+    let prev = x0;
+    const label = (a, b) => {
+      const txt = new Date(((a + b) / 2) * 1000).toLocaleDateString(LOCALE, X(b) - X(a) > 90 ? { weekday: "short", day: "numeric", month: "numeric" } : { weekday: "short" });
+      if (X(b) - X(a) > txt.length * 6.6 + 6) axis.append(el("text", { x: (X(a) + X(b)) / 2, y: H - 8, "text-anchor": "middle" }, txt));
+    };
+    for (; day.getTime() / 1000 <= x1; day.setDate(day.getDate() + 1)) {
+      const t = day.getTime() / 1000;
+      axis.append(el("line", { class: "gridline", x1: X(t), x2: X(t), y1: m.t, y2: H - m.b }));
+      label(prev, t); prev = t;
+    }
+    label(prev, x1);
+  } else {
+    const tickStep = W < 500 ? 21600 : 10800;
+    for (let t = Math.ceil(x0 / tickStep) * tickStep; t <= x1; t += tickStep) {
+      const x = X(t);
+      if (x < m.l + 14 || x > W - m.r - 14) continue;
+      axis.append(el("line", { class: "gridline", x1: x, x2: x, y1: m.t, y2: H - m.b }));
+      axis.append(el("text", { x, y: H - 8, "text-anchor": "middle" }, hhmm(t)));
+    }
   }
   svg.append(axis);
+  const plot = el("g", { "clip-path": `url(#${clipId})` });
+  svg.append(plot);
+
+  // pri teplote na niekoľko dní: pás od hodinového minima po maximum
+  if (band) {
+    const bw = Math.max(1, (step / (x1 - x0)) * (W - m.l - m.r));
+    times.forEach((t, i) => {
+      if (!shown(i) || !has(d.tMin[i]) || !has(d.tMax[i])) return;
+      plot.append(el("rect", { class: "band", x: X(t) - bw / 2, y: Y(d.tMax[i]), width: bw + 0.4, height: Math.max(0.8, Y(d.tMin[i]) - Y(d.tMax[i])), fill: "var(--c-temp)" }));
+    });
+  }
 
   for (const s of series) {
     if (s.bars) {
-      const bw = Math.max(1.5, ((600) / (x1 - x0)) * (W - m.l - m.r) - 1);
+      const bw = Math.max(1.5, (step / (x1 - x0)) * (W - m.l - m.r) - 1);
       s.v.forEach((v, i) => {
-        if (!v) return;
-        svg.append(el("rect", { x: X(times[i]) - bw / 2, y: Y(v), width: bw, height: Math.max(0.5, Y(lo) - Y(v)), fill: s.color, rx: 1 }));
+        if (!v || !shown(i)) return;
+        const part = multi && d.pokrytie[i] < 0.8;   // úhrn len zo vzoriek
+        plot.append(el("rect", { x: X(times[i]) - bw / 2, y: Y(v), width: bw, height: Math.max(0.5, Y(lo) - Y(v)), fill: s.color, rx: 1, opacity: part ? 0.35 : 1 }));
       });
       continue;
     }
     let dStr = "", prevT = null;
     s.v.forEach((v, i) => {
-      if (v === null || v === undefined) { prevT = null; return; }
-      const gap = prevT === null || times[i] - prevT > 2100;
+      if (v === null || v === undefined || !shown(i)) { prevT = null; return; }
+      const gap = prevT === null || times[i] - prevT > step * 3.5;
       dStr += `${gap ? "M" : "L"}${X(times[i]).toFixed(1)} ${Y(v).toFixed(1)} `;
       prevT = times[i];
     });
-    const attrs = { d: dStr, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" };
+    const attrs = { d: dStr, fill: "none", stroke: s.color, "stroke-width": multi && state.range > 3 ? 1.6 : 2, "stroke-linejoin": "round", "stroke-linecap": "round" };
     if (s.dash) attrs["stroke-dasharray"] = s.dash;
-    svg.append(el("path", attrs));
+    plot.append(el("path", attrs));
     const lastI = s.v.map((x, i) => [x, i]).filter(([x]) => x !== null && x !== undefined).pop();
-    if (lastI && !s.dash) svg.append(el("circle", { cx: X(times[lastI[1]]), cy: Y(lastI[0]), r: 3.5, fill: s.color }));
+    if (lastI && !s.dash) plot.append(el("circle", { cx: X(times[lastI[1]]), cy: Y(lastI[0]), r: 3.5, fill: s.color }));
+  }
+
+  // denné maximum a minimum: značka a hodnota pri teplote
+  if (kind === "t" && sd.dni) {
+    const ext = el("g", { class: "ext", "aria-hidden": "true" });
+    const mark = (t, v, up, approx) => {
+      if (!has(t) || !has(v)) return;
+      const tc = t + (multi ? 0 : 300);
+      if (tc < x0 || tc > x1) return;
+      const x = X(tc), y = Y(v), color = up ? "var(--c-temp)" : "var(--c-dew)";
+      ext.append(el("circle", { cx: x, cy: y, r: 3, fill: "var(--surface)", stroke: color, "stroke-width": 1.6 }));
+      const anchor = x < m.l + 24 ? "start" : x > W - m.r - 24 ? "end" : "middle";
+      ext.append(el("text", { x, y: up ? y - 7 : y + 15, "text-anchor": anchor, fill: color }, `${approx ? "≈" : ""}${fmt(v)}°`));
+    };
+    for (const day of sd.dni) {
+      const a = day.pokrytie < 0.9;
+      mark(day.tMaxCas, day.tMax, true, a);
+      mark(day.tMinCas, day.tMin, false, a);
+    }
+    svg.append(ext);
   }
 
   const cursor = el("line", { class: "cursor", y1: m.t, y2: H - m.b, visibility: "hidden" });
@@ -1237,13 +1460,15 @@ function renderChart() {
   const legend = (i) => series.map((s) => {
     const v = i === null ? null : s.v[i];
     return `<span><span class="sw" style="background:${s.color}"></span>${s.name}${i === null ? "" : `: <b class="num">${fmt(v, unitDigits)}</b> ${cfg.unit}`}</span>`;
-  }).join("") + (i === null ? "" : `<span class="muted num">${dayTime(times[i])}</span>`);
+  }).join("") + (band ? `<span><span class="sw" style="background:var(--c-temp);opacity:.3;height:8px"></span>rozpätie v hodine${i === null ? "" : `: <b class="num">${fmt(d.tMin[i])} až ${fmt(d.tMax[i])}</b> °C`}</span>` : "") +
+    (i === null ? "" : `<span class="muted num">${multi ? longTime(times[i] - 1800) : dayTime(times[i])}</span>`);
   tip.innerHTML = legend(null);
   svg.addEventListener("pointermove", (e) => {
     const r = svg.getBoundingClientRect();
     const t = x0 + (((e.clientX - r.left) / r.width) * W - m.l) / (W - m.l - m.r) * (x1 - x0);
-    let best = 0;
-    for (let i = 1; i < times.length; i++) if (Math.abs(times[i] - t) < Math.abs(times[best] - t)) best = i;
+    let best = times.findIndex((_, i) => shown(i));
+    if (best < 0) return;
+    for (let i = best + 1; i < times.length; i++) if (Math.abs(times[i] - t) < Math.abs(times[best] - t)) best = i;
     cursor.setAttribute("x1", X(times[best])); cursor.setAttribute("x2", X(times[best]));
     cursor.setAttribute("visibility", "visible");
     tip.innerHTML = legend(best);
@@ -1253,13 +1478,19 @@ function renderChart() {
 
   const span = (times[times.length - 1] - times[0]) / 3600;
   const notes = [];
-  if (span < 23) notes.push(`Priebeh je zatiaľ za ${fmt(span, 0)} h; dopĺňa sa ${STATIC_MODE ? "s každou aktualizáciou" : "kým stránka beží"}.`);
+  if (multi) {
+    if (span < state.range * 24 - 2) notes.push(`História je zatiaľ za ${fmt(span / 24, 1)} dňa; staršie dni sa dopĺňajú postupne ${STATIC_MODE ? "pri ďalších aktualizáciách" : "na pozadí"}.`);
+    notes.push("Hodinové priemery; staršie ako 24 hodín sú zo vzoriek každých 30 minút.");
+    if (kind === "t") notes.push("Svetlý pás je rozpätie teplôt v hodine, krúžky s číslom denné maximum a minimum.");
+  } else if (span < 23) notes.push(`Priebeh je zatiaľ za ${fmt(span, 0)} h; dopĺňa sa ${STATIC_MODE ? "s každou aktualizáciou" : "kým stránka beží"}.`);
+  else if (kind === "t" && sd.dni) notes.push("Krúžky s číslom sú denné maximum a minimum.");
   if (isWu(selSt)) {
     if (kind === "zrazky") notes.push("Stĺpec = úhrn za 10 minút podľa denného úhrnu, ktorý hlási stanica.");
     if (kind === "tlak") notes.push("Tlak udáva stanica, väčšinou je prepočítaný na hladinu mora.");
     if (!selSt.vlastna && state.data.wuStav?.interval) notes.push(`Stanica sa obnovuje každých ${Math.round(state.data.wuStav.interval / 60)} minút.`);
   } else {
-    if (kind === "zrazky") notes.push("Stĺpec = úhrn za 10 minút. Pri štarte sa staršie hodiny sťahujú len po častiach, preto môžu byť neúplné.");
+    if (kind === "zrazky") notes.push(multi ? "Stĺpec = úhrn za hodinu; svetlejšie stĺpce sú len zo vzoriek, skutočný úhrn bol väčší."
+      : "Stĺpec = úhrn za 10 minút. Pri štarte sa staršie hodiny sťahujú len po častiach, preto môžu byť neúplné.");
     if (kind === "tlak" && reduce) {
       notes.push(`Tlak prepočítaný na hladinu mora z tlaku na stanici, teploty a vlhkosti (tlakomer vo výške ${fmt(hBaro, 0)} m n. m.).`);
       if (selSt && selSt.vyskaZdroj) notes.push("Výška stanice je odčítaná z modelu terénu, hodnota môže byť posunutá asi o 1 až 2 hPa.");
@@ -1848,7 +2079,7 @@ function drawForecast() {
   drawForecastLegend(cfg);
 }
 
-function drawForecastLegend(cfg) {
+function drawForecastLegend(cfg, box = $("#fcLegend"), title = `${cfg.label} (${cfg.unit})`) {
   const W = 420, H = 34, lo = cfg.ticks[0], hi = cfg.ticks[cfg.ticks.length - 1];
   const f = cfg.log ? Math.log : (x) => x;
   const X = (v) => 8 + ((f(v) - f(lo)) / (f(hi) - f(lo))) * (W - 16);
@@ -1864,10 +2095,9 @@ function drawForecastLegend(cfg) {
     const txt = cfg.unit === "hPa" ? String(t) : fmt(t, t < 1 && t > 0 ? 1 : 0);
     svg.append(el("text", { x: anchor === "start" ? X(t) - 4 : anchor === "end" ? X(t) + 4 : X(t), y: 26, "text-anchor": anchor }, txt));
   });
-  const box = $("#fcLegend");
   box.replaceChildren(svg);
   const unit = document.createElement("span");
-  unit.className = "muted"; unit.style.fontSize = "12.5px"; unit.textContent = `${cfg.label} (${cfg.unit})`;
+  unit.className = "muted"; unit.style.fontSize = "12.5px"; unit.textContent = title;
   box.append(unit);
 }
 
@@ -2127,7 +2357,355 @@ function drawStationForecast() {
   });
   box.replaceChildren(svg);
 }
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawForecast());
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { drawForecast(); drawRadar(); });
+
+/* ---------- Radar a zrážkomerné stanice ---------- */
+const RD_MIN_DBZ = 12;   // slabšie odrazy (asi pod 0,2 mm/h) bývajú šum alebo odrazy od terénu
+const RD_PERIODS = {
+  "1h": { label: "1 h", popis: "za poslednú hodinu", get: (g) => g.zrazky1h },
+  "3h": { label: "3 h", popis: "za posledné 3 hodiny", get: (g) => g.zrazky3h },
+  "24h": { label: "24 h", popis: "za posledných 24 hodín", get: (g) => g.zrazky24h },
+  dnes: { label: "Dnes", popis: "od polnoci", get: (g) => gaugeDay(g, 0) },
+};
+const rd = {
+  meta: null, frames: new Map(), idx: 0, timer: null, geom: null, lut: null, gauges: null, shownAll: false, query: "",
+  period: RD_PERIODS[store.get("pocasie.rdobdobie")] ? store.get("pocasie.rdobdobie") : "24h",
+  showGauges: store.get("pocasie.rdzrazkomery") !== "0", showRadar: store.get("pocasie.rdradar") !== "0",
+  missing: { radar: false, gauges: false },
+};
+const localDay = (back) => { const d = new Date(); d.setDate(d.getDate() - back); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+function gaugeDay(g, back) {
+  const label = localDay(back);
+  return (g.dni || []).find((x) => x.den === label) || null;
+}
+const dbzToRate = (dbz) => Math.pow(Math.pow(10, dbz / 10) / 200, 1 / 1.6);   // Marshall–Palmer, mm/h
+
+async function loadRadar() {
+  let m;
+  try { m = await getJSON(URLS.radar()); } catch (err) { rd.missing.radar = String(err.message).includes("404"); updateRadarPanel(); return; }
+  rd.missing.radar = false;
+  const old = rd.meta, frames = m.snimky || [];
+  const atEnd = !old || rd.idx >= old.snimky.length - 1;
+  const shownCas = old && old.snimky[rd.idx] ? old.snimky[rd.idx].cas : null;
+  if (!old || JSON.stringify(old.mriezka) !== JSON.stringify(m.mriezka)) { rd.geom = null; rd.lut = null; }
+  rd.meta = m;
+  const names = new Set(frames.map((f) => f.subor));
+  for (const k of [...rd.frames.keys()]) if (!names.has(k)) rd.frames.delete(k);
+  rd.idx = atEnd ? frames.length - 1 : Math.max(0, frames.findIndex((f) => f.cas === shownCas));
+  const slider = $("#rdSlider");
+  slider.max = String(Math.max(0, frames.length - 1));
+  slider.value = String(rd.idx);
+  updateRadarPanel();
+  await showRadarFrame(rd.idx);
+  // ostatné snímky na pozadí, aby animácia nečakala
+  frames.forEach((f) => radarFrame(f.subor).catch(() => {}));
+}
+
+async function loadGauges() {
+  try { rd.gauges = await getJSON(URLS.gauges()); rd.missing.gauges = false; } catch (err) { rd.missing.gauges = String(err.message).includes("404"); }
+  updateRadarPanel();
+  renderGaugeTable();
+  drawRadar();
+}
+
+function radarFrame(name) {
+  if (rd.frames.has(name)) return rd.frames.get(name);
+  const p = fetch(URLS.radarFrame(name)).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return new Response(r.body.pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
+  }).then((b) => new Uint8Array(b));
+  rd.frames.set(name, p);
+  p.catch(() => rd.frames.delete(name));
+  return p;
+}
+
+async function showRadarFrame(i) {
+  const f = rd.meta && rd.meta.snimky[i];
+  if (!f) { drawRadar(); return; }
+  try { rd.current = { cas: f.cas, data: await radarFrame(f.subor) }; } catch { rd.current = null; }
+  if (rd.meta.snimky[rd.idx] !== f) return;   // medzitým sa posunul čas
+  drawRadar();
+}
+
+function updateRadarPanel() {
+  const panel = $("#radar");
+  panel.hidden = rd.missing.radar && rd.missing.gauges;
+  const seg = $("#rdPeriods");
+  if (!seg.dataset.ready) {
+    seg.dataset.ready = "1";
+    seg.innerHTML = Object.entries(RD_PERIODS).map(([k, p]) => `<button type="button" data-k="${k}" aria-pressed="${k === rd.period}">${p.label}</button>`).join("");
+    seg.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      rd.period = b.dataset.k; store.set("pocasie.rdobdobie", rd.period);
+      seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      renderGaugeTable(); drawRadar();
+    }));
+  }
+  seg.hidden = !rd.gauges;
+  const parts = [];
+  const m = rd.meta;
+  if (m && m.snimky && m.snimky.length) {
+    const last = m.snimky[m.snimky.length - 1].cas;
+    parts.push(`Radar SHMÚ (kompozit CAPPI 2 km), posledná snímka ${hhmm(last)}, ${ago(last)}`);
+  } else if (m && m.stav && m.stav.stav === "chyba") parts.push(`Radar sa nepodarilo stiahnuť: ${m.stav.chyba}`);
+  else if (!rd.missing.radar) parts.push("Sťahujem snímky radaru…");
+  if (rd.gauges) {
+    const n = rd.gauges.stanice.length;
+    parts.push(`${n} zrážkomerných staníc${rd.gauges.najnovsieMeranie ? `, meranie ${hhmm(rd.gauges.najnovsieMeranie)}` : ""}`);
+  }
+  $("#rdRun").textContent = parts.join(" · ");
+  $("#rdGauges").checked = rd.showGauges;
+  $("#rdShowRadar").checked = rd.showRadar;
+  if (typeof DecompressionStream === "undefined") $("#rdNote").textContent = "Tento prehliadač nevie rozbaliť snímky radaru. Skúste novší prehliadač.";
+}
+
+function radarGeom(w) {
+  const g = rd.meta.mriezka, s = w / MAP.w, h = Math.round((w * MAP.h) / MAP.w);
+  const r = w > 900 ? 2 : 1;
+  const ow = Math.ceil(w / r), oh = Math.ceil(h / r), idx = new Int32Array(ow * oh).fill(-1);
+  const rad = Math.PI / 180, k = g.R * Math.cos(g.latTs * rad), lon0 = g.lon0 * rad;
+  for (let y = 0; y < oh; y++) {
+    const lat = MAP.lat1 - (((y + 0.5) * r) / s) / MAP.scale;
+    const my = k * Math.log(Math.tan(Math.PI / 4 + (lat * rad) / 2));
+    const j = Math.floor((g.y0 - my) / g.dy);
+    if (j < 0 || j >= g.ny) continue;
+    for (let x = 0; x < ow; x++) {
+      const lon = (((x + 0.5) * r) / s) / (MAP.kx * MAP.scale) + MAP.lon0;
+      const i = Math.floor((k * (lon * rad - lon0) - g.x0) / g.dx);
+      if (i >= 0 && i < g.nx) idx[y * ow + x] = j * g.nx + i;
+    }
+  }
+  let path = null;
+  if (outline) {
+    path = new Path2D();
+    for (const ring of outline) {
+      ring.forEach(([lo, la], q) => { const [x, y] = proj(lo, la); q ? path.lineTo(x * s, y * s) : path.moveTo(x * s, y * s); });
+      path.closePath();
+    }
+  }
+  const off = document.createElement("canvas");
+  off.width = ow; off.height = oh;
+  return { w, h, s, r, ow, oh, idx, path, off, offCtx: off.getContext("2d") };
+}
+
+function radarLut() {
+  const g = rd.meta.mriezka, lut = new Uint8ClampedArray(256 * 4), cfg = FC_FIELDS.zrazky;
+  for (let v = 0; v < 256; v++) {
+    if (v === g.undetect) continue;
+    if (v === 255 || v === g.nodata) { lut.set([128, 128, 128, 46], v * 4); continue; }   // mimo dosahu radarov
+    const dbz = v * g.gain + g.offset;
+    if (dbz < RD_MIN_DBZ) continue;
+    const c = scaleColor(cfg, Math.max(cfg.min, dbzToRate(dbz))) || cfg.stops[0][1];
+    lut.set([c[0], c[1], c[2], Math.round(Math.min(1, (dbz - RD_MIN_DBZ + 1) / 5) * 225)], v * 4);
+  }
+  return lut;
+}
+
+function gaugeValue(g) {
+  const v = RD_PERIODS[rd.period].get(g);
+  return v ? v : null;
+}
+
+function drawRadar() {
+  const box = $("#rdMap"), canvas = $("#rdCanvas");
+  if (!box || $("#radar").hidden) return;
+  const w = Math.round(box.clientWidth), dpr = window.devicePixelRatio || 1;
+  if (!w) return;
+  const h = Math.round((w * MAP.h) / MAP.w), s = w / MAP.w;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+  canvas.style.height = `${h}px`;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const land = css.getPropertyValue("--sunken").trim(), ink = css.getPropertyValue("--ink").trim(), muted = css.getPropertyValue("--muted").trim(),
+    surface = css.getPropertyValue("--surface").trim(), font = css.getPropertyValue("--font-body").trim(), dataFont = css.getPropertyValue("--font-data").trim();
+
+  const hasGrid = rd.meta && rd.meta.mriezka;
+  if (hasGrid && (!rd.geom || rd.geom.w !== w || (!rd.geom.path && outline))) rd.geom = radarGeom(w);
+  const G = rd.geom;
+  const path = G && G.path;
+  if (path) { ctx.fillStyle = land; ctx.fill(path); }
+  // 1) radar
+  if (G && rd.showRadar && rd.current) {
+    if (!rd.lut) rd.lut = radarLut();
+    const img = G.offCtx.createImageData(G.ow, G.oh), px = img.data, data = rd.current.data, lut = rd.lut;
+    for (let p = 0; p < G.idx.length; p++) {
+      const q = G.idx[p];
+      if (q < 0) continue;
+      const l = data[q] * 4;
+      if (!lut[l + 3]) continue;
+      const o = p * 4;
+      px[o] = lut[l]; px[o + 1] = lut[l + 1]; px[o + 2] = lut[l + 2]; px[o + 3] = lut[l + 3];
+    }
+    G.offCtx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = G.r > 1;
+    ctx.drawImage(G.off, 0, 0, G.ow * G.r, G.oh * G.r);
+  }
+  // 2) hranice
+  if (borders) {
+    ctx.strokeStyle = ink; ctx.globalAlpha = 0.3; ctx.lineWidth = 0.8; ctx.lineJoin = "round";
+    for (const line of borders) {
+      ctx.beginPath();
+      line.forEach(([lo, la], q) => { const [x, y] = proj(lo, la); q ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s); });
+      ctx.stroke();
+    }
+  }
+  if (path) { ctx.globalAlpha = 0.75; ctx.strokeStyle = ink; ctx.lineWidth = 1.2; ctx.stroke(path); }
+  ctx.globalAlpha = 1;
+  const boxes = [];
+  // 3) zrážkomery: bodka (veľkosť podľa úhrnu) a číslo, kde je miesto
+  rd.drawn = [];
+  if (rd.showGauges && rd.gauges) {
+    const fsz = w < 500 ? 10.5 : 11.5;
+    ctx.font = `600 ${fsz}px ${dataFont}`;
+    ctx.textBaseline = "middle";
+    const list = rd.gauges.stanice.filter((g) => has(g.lat) && has(g.lon)).map((g) => {
+      const v = gaugeValue(g), [x, y] = proj(g.lon, g.lat);
+      return { g, v: v ? v.mm : null, x: x * s, y: y * s };
+    }).filter((o) => o.v !== null).sort((a, b) => b.v - a.v);
+    for (const o of [...list].reverse()) {
+      if (o.v >= 0.1) {
+        const rr = 2.4 + Math.min(6, Math.sqrt(o.v) * 1.3);
+        ctx.beginPath(); ctx.arc(o.x, o.y, rr, 0, Math.PI * 2);
+        ctx.fillStyle = ink; ctx.globalAlpha = 0.85; ctx.fill();
+        ctx.globalAlpha = 1; ctx.lineWidth = 1.2; ctx.strokeStyle = surface; ctx.stroke();
+        o.r = rr;
+      } else {
+        ctx.beginPath(); ctx.arc(o.x, o.y, 1.8, 0, Math.PI * 2);
+        ctx.strokeStyle = muted; ctx.globalAlpha = 0.7; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
+        o.r = 2;
+      }
+      rd.drawn.push(o);
+      boxes.push({ x: o.x - o.r, y: o.y - o.r, w: 2 * o.r, h: 2 * o.r });
+    }
+    // popisy od najväčšieho úhrnu
+    ctx.lineWidth = 3; ctx.lineJoin = "round";
+    for (const o of list) {
+      if (o.v < 0.1) break;
+      const txt = fmt(o.v, o.v >= 10 ? 0 : 1), tw = ctx.measureText(txt).width;
+      const tries = [[o.x + o.r + 3, o.y, "left"], [o.x - o.r - 3, o.y, "right"], [o.x, o.y - o.r - 7, "center"], [o.x, o.y + o.r + 8, "center"]];
+      for (const [tx, ty, al] of tries) {
+        const x0 = al === "left" ? tx : al === "right" ? tx - tw : tx - tw / 2, b = { x: x0 - 1, y: ty - fsz / 2 - 1, w: tw + 2, h: fsz + 2 };
+        if (b.x < 0 || b.x + b.w > w || b.y < 0 || b.y + b.h > h) continue;
+        if (boxes.some((q) => b.x < q.x + q.w && b.x + b.w > q.x && b.y < q.y + q.h && b.y + b.h > q.y)) continue;
+        boxes.push(b);
+        ctx.textAlign = al; ctx.strokeStyle = surface; ctx.strokeText(txt, tx, ty); ctx.fillStyle = ink; ctx.fillText(txt, tx, ty);
+        break;
+      }
+    }
+    ctx.textAlign = "left";
+  }
+  // 4) mestá (len kde je miesto)
+  {
+    const fsz = w < 500 ? 11 : 12;
+    ctx.font = `italic ${fsz}px ${font}`;
+    ctx.textBaseline = "middle";
+    for (const [name, lat, lon, main] of FC_CITIES) {
+      if (w < 500 && !main) continue;
+      const [x, y] = proj(lon, lat).map((v) => v * s);
+      const tw = ctx.measureText(name).width, b = { x: x - tw / 2 - 2, y: y + 4, w: tw + 4, h: fsz + 3 };
+      if (b.x < 0 || b.x + b.w > w || b.y + b.h > h) continue;
+      if (boxes.some((q) => b.x < q.x + q.w && b.x + b.w > q.x && b.y < q.y + q.h && b.y + b.h > q.y)) continue;
+      boxes.push(b);
+      ctx.strokeStyle = muted; ctx.lineWidth = 1.1; ctx.globalAlpha = 0.9; ctx.strokeRect(x - 2.5, y - 2.5, 5, 5);
+      ctx.lineWidth = 3; ctx.strokeStyle = surface; ctx.textAlign = "center";
+      ctx.strokeText(name, x, y + 4 + fsz / 2 + 1); ctx.fillStyle = muted; ctx.fillText(name, x, y + 4 + fsz / 2 + 1);
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = "left";
+  }
+
+  const f = rd.meta && rd.meta.snimky[rd.idx];
+  $("#rdTime").textContent = f ? longTime(f.cas) : "—";
+  $("#rdAgo").textContent = f ? `${ago(f.cas)} · snímka ${rd.idx + 1} z ${rd.meta.snimky.length}` : "";
+  drawForecastLegend(FC_FIELDS.zrazky, $("#rdLegend"), "Intenzita zrážok podľa radaru (mm/h)");
+  if (typeof DecompressionStream !== "undefined") {
+    $("#rdNote").textContent = `Farba je intenzita zrážok odhadnutá z odrazivosti radaru (vzťah Marshall–Palmer); odrazy slabšie ako ${RD_MIN_DBZ} dBZ sa nezobrazujú, sivé oblasti sú mimo dosahu radarov.` +
+      (rd.showGauges && rd.gauges ? ` Bodky sú zrážkomerné stanice, číslo je úhrn ${RD_PERIODS[rd.period].popis} v mm (krúžok = bez zrážok).` : "");
+  }
+}
+
+function renderGaugeTable() {
+  const head = $("#rdHead"), body = $("#rdBody"), note = $("#rdTableNote");
+  if (!rd.gauges) { body.innerHTML = ""; return; }
+  const P = RD_PERIODS[rd.period];
+  const cols = [["Stanica", ""], ["Teraz", "mm/h"], ["1 h", "mm"], ["3 h", "mm"], ["24 h", "mm"], ["Dnes", "mm"], ["Včera", "mm"], ["7 dní", "mm"]];
+  head.innerHTML = cols.map(([l, u]) => `<th scope="col">${l}${u ? ` <span style="text-transform:none">${u}</span>` : ""}</th>`).join("");
+  const q = rd.query.trim().toLocaleLowerCase(LOCALE);
+  const week = (g) => {
+    const days = (g.dni || []).filter((x) => x.den >= localDay(6));
+    if (!days.length) return null;
+    return { mm: days.reduce((a, x) => a + x.mm, 0), pokrytie: days.reduce((a, x) => a + x.pokrytie, 0) / 7 };
+  };
+  const cell = (v) => {
+    if (!v) return `<td class="num">—</td>`;
+    const a = v.pokrytie < 0.9 ? "≈" : "";
+    return `<td class="num${v.mm < 0.05 ? " mm0" : ""}"${a ? ` title="Meranie pokrýva ${Math.round(v.pokrytie * 100)} % obdobia"` : ""}>${a}${fmt(v.mm, 1)}</td>`;
+  };
+  let rows = rd.gauges.stanice.filter((g) => !q || (g.nazov || "").toLocaleLowerCase(LOCALE).includes(q) || String(g.id).includes(q));
+  rows.sort((a, b) => ((gaugeValue(b)?.mm ?? -1) - (gaugeValue(a)?.mm ?? -1)) || (a.nazov || "").localeCompare(b.nazov || "", LOCALE));
+  const total = rows.length, limit = rd.shownAll || q ? rows.length : 15;
+  rows = rows.slice(0, limit);
+  body.innerHTML = rows.map((g) => `<tr>
+      <td class="name">${esc(g.nazov || `Zrážkomer č. ${g.id}`)}<span class="idx num">${g.id}</span></td>
+      <td class="num${!g.intenzita ? " mm0" : ""}">${has(g.intenzita) ? fmt(g.intenzita, 1) : "—"}</td>
+      ${cell(g.zrazky1h)}${cell(g.zrazky3h)}${cell(g.zrazky24h)}${cell(gaugeDay(g, 0))}${cell(gaugeDay(g, 1))}${cell(week(g))}</tr>`).join("");
+  $("#rdTableTitle").textContent = `Zrážkomerné stanice podľa úhrnu ${P.popis}`;
+  const more = !q && total > 15;
+  note.innerHTML = `${more ? `Zobrazených ${limit} z ${total}. <button type="button" class="btn rd-more" id="rdMore">${rd.shownAll ? "Zobraziť menej" : "Zobraziť všetky"}</button> ` : ""}` +
+    "≈ = meranie nepokrýva celé obdobie (stanica chvíľu neposielala dáta, alebo sa história ešte dopĺňa). Teraz = intenzita za posledných 10 minút.";
+  $("#rdMore")?.addEventListener("click", () => { rd.shownAll = !rd.shownAll; renderGaugeTable(); });
+}
+
+$("#rdSearch").addEventListener("input", (e) => { rd.query = e.target.value; renderGaugeTable(); });
+$("#rdGauges").addEventListener("change", (e) => { rd.showGauges = e.target.checked; store.set("pocasie.rdzrazkomery", rd.showGauges ? "1" : "0"); drawRadar(); });
+$("#rdShowRadar").addEventListener("change", (e) => { rd.showRadar = e.target.checked; store.set("pocasie.rdradar", rd.showRadar ? "1" : "0"); drawRadar(); });
+$("#rdSlider").addEventListener("input", (e) => { rd.idx = Number(e.target.value); showRadarFrame(rd.idx); });
+$("#rdPlay").addEventListener("click", () => setRadarPlaying(!rd.timer));
+function setRadarPlaying(on) {
+  clearTimeout(rd.timer); rd.timer = null;
+  const b = $("#rdPlay");
+  if (on && rd.meta && rd.meta.snimky.length > 1) {
+    const tick = async () => {
+      const n = rd.meta.snimky.length;
+      rd.idx = (rd.idx + 1) % n;
+      $("#rdSlider").value = String(rd.idx);
+      await showRadarFrame(rd.idx);
+      if (rd.timer !== null) rd.timer = setTimeout(tick, rd.idx === n - 1 ? 1500 : 380);
+    };
+    if (rd.idx >= rd.meta.snimky.length - 1) rd.idx = -1;
+    rd.timer = setTimeout(tick, 0);
+  }
+  b.setAttribute("aria-pressed", String(!!rd.timer));
+  b.innerHTML = rd.timer ? `${PAUSE_ICON} Zastaviť` : `${PLAY_ICON} Prehrať`;
+}
+setRadarPlaying(false);
+
+let rdTip = null;
+$("#rdCanvas").addEventListener("pointermove", (e) => {
+  const rect = e.currentTarget.getBoundingClientRect(), x = e.clientX - rect.left, y = e.clientY - rect.top;
+  rdTip = rdTip || Object.assign(document.createElement("div"), { className: "map-tip" });
+  const parts = [];
+  const near = (rd.drawn || []).reduce((acc, o) => { const dd = Math.hypot(o.x - x, o.y - y); return dd < 14 && (!acc || dd < acc.d) ? { o, d: dd } : acc; }, null);
+  if (near) parts.push(`${near.o.g.nazov || near.o.g.id}: ${fmt(near.o.v, 1)} mm ${RD_PERIODS[rd.period].label === "Dnes" ? "dnes" : `za ${RD_PERIODS[rd.period].label}`}`);
+  const G = rd.geom;
+  if (G && rd.current && rd.showRadar) {
+    const ox = Math.floor(x / G.r), oy = Math.floor(y / G.r), q = ox >= 0 && oy >= 0 && ox < G.ow && oy < G.oh ? G.idx[oy * G.ow + ox] : -1;
+    if (q >= 0) {
+      const g = rd.meta.mriezka, raw = rd.current.data[q];
+      if (raw === 255 || raw === g.nodata) parts.push("mimo dosahu radaru");
+      else {
+        const dbz = raw * g.gain + g.offset;
+        parts.push(raw === g.undetect || dbz < RD_MIN_DBZ ? "radar: bez zrážok" : `radar: ${fmt(dbzToRate(dbz), 1)} mm/h (${fmt(dbz, 0)} dBZ)`);
+      }
+    }
+  }
+  if (!parts.length) { rdTip.remove(); return; }
+  rdTip.textContent = parts.join(" · ");
+  rdTip.style.left = `${x}px`; rdTip.style.top = `${y}px`;
+  $("#rdMap").append(rdTip);
+});
+$("#rdCanvas").addEventListener("pointerleave", () => rdTip?.remove());
 
 /* Štart */
 window.addEventListener("hashchange", () => {
@@ -2141,6 +2719,7 @@ window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     drawForecast();
+    drawRadar();
     if (!state.data) return;
     renderMap();
     if (state.stationData && state.stationFor === state.selected) renderChart();
@@ -2151,6 +2730,10 @@ refresh();
 setInterval(refresh, STATIC_MODE ? 120000 : 60000);
 loadForecastMeta();
 setInterval(loadForecastMeta, 10 * 60000);
+loadRadar();
+loadGauges();
+setInterval(loadRadar, STATIC_MODE ? 120000 : 150000);
+setInterval(loadGauges, 120000);
 setInterval(() => { if (state.data) renderStatus(); }, 30000);
 </script>
 </body>

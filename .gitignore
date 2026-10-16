@@ -7,3 +7,5 @@ wunderground_pocitadlo.json
 # výstupy generuj.py pri skúšaní na vlastnom počítači
 _site/
 stav/
+# snímky radaru lokálneho servera
+_radar/

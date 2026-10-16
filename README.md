@@ -7,12 +7,18 @@ dátového servera SHMÚ <https://opendata.shmu.sk/> (priečinok
 
 Na stránke nájdete:
 
-- extrémy z posledného merania (najteplejšie, najchladnejšie, najsilnejší náraz vetra, najviac zrážok za hodinu),
+- extrémy z posledného merania (najteplejšie, najchladnejšie, najsilnejší náraz vetra, najviac zrážok za hodinu)
+  a dnešné maximum a minimum teploty na Slovensku aj s časom,
 - mapu Slovenska s teplotou na staniciach so známou polohou,
 - tabuľku všetkých asi 95 staníc s vyhľadávaním a zoraďovaním,
-- detail vybranej stanice: teplota, vlhkosť, vypočítaný rosný bod, tlak, vietor a nárazy, zrážky za 1 a 24 hodín,
-  dohľadnosť, sneh, globálne žiarenie, prízemná teplota, teplota pôdy a stav počasia,
-- grafy teploty, vetra, zrážok, tlaku a vlhkosti za posledných 24 hodín,
+- detail vybranej stanice: teplota, dnešné maximum a minimum, vlhkosť, vypočítaný rosný bod, tlak, vietor
+  a nárazy, zrážky za 1 a 24 hodín, dohľadnosť, sneh, globálne žiarenie, prízemná teplota, teplota pôdy
+  a stav počasia,
+- grafy teploty, vetra, zrážok, tlaku a vlhkosti za posledných 24 hodín, 3 dni alebo 7 dní, s vyznačeným
+  denným maximom a minimom, a tabuľku posledných dní (minimum, maximum, zrážky, najsilnejší náraz),
+- radar SHMÚ (kompozit CAPPI 2 km) za posledné 2 hodiny s prehrávaním,
+- úhrny zrážok asi zo 190 automatických zrážkomerných staníc SHMÚ za 1 h, 3 h, 24 h, dnes, včera a 7 dní,
+  na mape spolu s radarom aj v tabuľke,
 - mapy predpovede modelu ALADIN na 3 až 4 dni: teplota, zrážky, oblačnosť, vietor, nárazy a tlak,
   s posuvníkom času a prehrávaním; na GitHube aj mapy modelu ICON-EU na 5 dní,
 - graf predpovede pre vybranú stanicu, ktorý porovnáva modely ALADIN, ICON-EU a ECMWF
@@ -47,7 +53,8 @@ Obmedzenia oproti lokálnemu serveru:
 
 - dáta sa obnovujú asi každých 10 minút; pri vyťažení GitHub spustenie oneskorí,
 - stránka je verejná (kto pozná adresu, vidí ju); kľúč k API zostáva skrytý v *Secrets*,
-- grafy za 24 hodín sa po prvom spustení dopĺňajú postupne počas niekoľkých behov,
+- grafy za 24 hodín sa po prvom spustení dopĺňajú postupne počas niekoľkých behov; história na 7 dní
+  asi za 2 hodiny, úhrny zrážkomerov za predošlé dni asi za 10 hodín (každý beh stiahne len kúsok),
 - ak by GitHub automatické spúšťanie po dlhšej nečinnosti vypol, zapnete ho v záložke Actions.
 
 ## Čo potrebujete
@@ -70,7 +77,9 @@ Okno s bežiacim serverom nechajte otvorené. Ukončíte ho klávesmi Ctrl+C ale
 
 Pri štarte server stiahne históriu za posledných 24 hodín: posledné 2 hodiny úplne, staršie po
 30 minútach (spolu približne 70 súborov po 0,4 MB). Prvé údaje sa zobrazia do niekoľkých sekúnd,
-grafy sa doplnia do minúty. Kým server beží, história sa dopĺňa úplne.
+grafy sa doplnia do minúty. Kým server beží, história sa dopĺňa úplne. Staršie dni (pre grafy na 3 a
+7 dní a denné maximá) sťahuje potom na pozadí po malých častiach, súbor každých 30 minút. Zrážkomery
+stiahnu pri štarte posledných 24 hodín (asi 290 súborov po 70 kB), radar posledné 2 hodiny.
 
 ## Voľby
 
@@ -80,6 +89,9 @@ python server.py --host 0.0.0.0       # stránka dostupná aj z iných zariaden�
 python server.py --hodiny 48          # dlhšia história v grafoch
 python server.py --interval 300       # kontrolovať nové dáta každých 5 minút
 python server.py --bez-predpovede     # vypnúť predpoveď ALADIN (šetrí asi 11 MB sťahovania na každý beh)
+python server.py --dni 3              # kratšia história pre grafy na niekoľko dní (predvolene 8)
+python server.py --bez-radaru         # nesťahovať snímky radaru
+python server.py --bez-zrazkomerov    # nesťahovať údaje zrážkomerných staníc
 python server.py --help               # všetky voľby
 ```
 
@@ -104,6 +116,30 @@ ako nginx alebo Caddy; samotný `server.py` je jednoduchý a nemá prihlasovanie
 - **Rosný bod** stránka vypočítava z teploty a vlhkosti (Magnusov vzorec).
 - **Stav počasia** je kód podľa tabuľky WMO 4680, ktorý hlási len časť staníc.
 - Stanica bez merania viac ako hodinu je označená ako **neaktuálna** a nezapočítava sa do extrémov.
+- **Denné maximum a minimum** platí pre miestny deň od polnoci. Posledných 24 hodín je z každej minúty,
+  staršie dni sa dopĺňajú zo vzoriek každých 30 minút (súbor SHMÚ obsahuje 5 minút meraní). Takéto
+  hodnoty majú znak ≈, skutočné maximum či minimum môže byť o niečo výraznejšie. Do dnešných
+  extrémov v hornej časti stránky sa rátajú len stanice, ktoré dnes merali aspoň polovicu času.
+- **Graf na 3 alebo 7 dní** ukazuje hodinové priemery; svetlý pás pri teplote je rozpätie teplôt
+  v hodine. Úhrny zrážok zo starších dní sú pri staniciach SHMÚ len zo vzoriek, preto sú stĺpce svetlejšie;
+  úplné denné úhrny ukazujú zrážkomery.
+
+## Radar a zrážkomery
+
+- **Radar:** SHMÚ zverejňuje každých 5 minút kompozit odrazivosti CAPPI vo výške 2 km
+  (`meteorology/weather/radar/composite/skcomp/cappi2km`, formát ODIM HDF5). Súbory číta `radar.py`
+  bez ďalších knižníc, vyreže oblasť mapy a zmenší ju na sieť asi 660 m (zo štvorca 2 × 2 bodov
+  ostane najsilnejší odraz). Snímka má podľa počasia asi 2 až 70 kB. Farba je intenzita zrážok
+  odhadnutá z odrazivosti vzťahom Marshall–Palmer (Z = 200·R^1,6); odrazy slabšie ako 12 dBZ sa
+  nezobrazujú, lebo bývajú šum alebo odrazy od terénu. Pozor: atribút `yscale` v súboroch SHMÚ nesedí
+  s rohmi obrazu, krok mriežky sa preto počíta z rohov.
+- **Zrážkomery:** priečinok `meteorology/precipitation/now` obsahuje každých 5 minút minútové úhrny
+  asi zo 190 automatických zrážkomerných staníc. Úhrny sa počítajú presne po minútach (žiadna
+  minúta sa nezapočíta dvakrát). Stanice sú v dátach len pod číslom (`ind_zra`); názvy a súradnice
+  sú v súbore `zrazkomery.json`, ktorý vytvorí `python zrazkomery.py` zo služby WFS SHMÚ (sieť
+  zrážkomerných staníc, INSPIRE).
+- Na mape je číslo pri zrážkomere úhrn za zvolené obdobie v mm, prázdny krúžok znamená bez zrážok.
+  ≈ v tabuľke znamená, že meranie nepokrýva celé obdobie.
 
 ## Predpoveď ALADIN
 
@@ -198,6 +234,11 @@ Server si zmeny v súbore načíta sám, netreba ho reštartovať.
 | `generuj.py` | statická verzia pre GitHub Pages (spúšťa ju GitHub Actions) |
 | `.github/workflows/pocasie.yml` | plán spúšťania na GitHube každých 10 minút |
 | `aladin.py` | číta súbory predpovede ALADIN (formát GRIB2) bez ďalších knižníc |
+| `historia.py` | hodinové súhrny pre grafy na niekoľko dní, denné maximá, minimá a úhrny |
+| `radar.py` | číta radarový kompozit SHMÚ (ODIM HDF5) bez ďalších knižníc a pripravuje snímky |
+| `zrazkomery.py` | úhrny zo zrážkomerných staníc; spustený samostatne obnoví `zrazkomery.json` |
+| `zrazkomery.json` | názvy a polohy zrážkomerných staníc (zo služby WFS SHMÚ) |
+| `_radar/` | snímky radaru lokálneho servera (vznikne sám) |
 | `wunderground.py` | sťahuje vlastnú a okolité stanice z Weather Underground |
 | `wunderground.json` | vznikne po zadaní kľúča: kľúč a ID stanice (nikomu ho neposielajte) |
 | `certs/shmu-chain.pem` | medzicertifikát a koreňový certifikát Sectigo pre opendata.shmu.sk |
@@ -205,7 +246,8 @@ Server si zmeny v súbore načíta sám, netreba ho reštartovať.
 
 ## Zdroje a licencie
 
-- Meteorologické dáta: Slovenský hydrometeorologický ústav, <https://opendata.shmu.sk/>.
+- Meteorologické dáta, radar a zrážkomery: Slovenský hydrometeorologický ústav, <https://opendata.shmu.sk/>.
+- Zoznam zrážkomerných staníc: SHMÚ, služba WFS `geo.shmu.sk/geoserver/ef-swn-precs` (INSPIRE, CC BY 4.0).
 - Názvy a súradnice ostatných automatických staníc: mapa staníc SHMÚ, <https://www.shmu.sk/sk/?page=838&uhrny=24>.
 - Formát dát, súradnice synoptických staníc a pozorovania o časovom pásme vychádzajú z projektu
   [vaind/ha-shmu](https://github.com/vaind/ha-shmu) (licencia MIT, © 2026 Ivan Dlugoš).
