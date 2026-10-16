@@ -1032,6 +1032,8 @@ function hideTip() { tipEl?.remove(); }
 const COLS = [
   { key: "nazov", label: "Stanica", get: (s) => s.nazov ? `0${s.nazov}` : `1${String(s.id).padStart(6, "0")}` },
   { key: "t", label: "Teplota", get: (s) => s.hodnoty.t },
+  { key: "tmax", label: "Max dnes", get: (s) => (s.dnes ? s.dnes.tMax : null) },
+  { key: "tmin", label: "Min dnes", get: (s) => (s.dnes ? s.dnes.tMin : null) },
   { key: "vlh", label: "Vlhkosť", get: (s) => s.hodnoty.vlh_rel },
   { key: "vietor", label: "Vietor", get: (s) => s.hodnoty.vie_pr_rych },
   { key: "naraz", label: "Nárazy", get: (s) => s.hodnoty.vie_max_rych },
@@ -1076,9 +1078,17 @@ function renderTable() {
     const c = tColor(v.t);
     const tCell = c ? `<span class="chip num" style="background:${rgb(c)};color:${inkOn(c)}">${fmt(v.t)}</span>` : "—";
     const rain = s.zrazky1h ? `${s.zrazky1h.pokrytie < 0.9 ? "≈" : ""}${fmt(s.zrazky1h.mm, 1)}` : "—";
+    // dnešné maximum a minimum: farba ako teplota, v popise čas; ≈ ak stanica dnes nemerala celý čas
+    const dayCell = (key, when) => {
+      const dn = s.dnes, t = dn ? dn[key] : null;
+      if (t === null || t === undefined) return `<td class="num">—</td>`;
+      const tip = `${key === "tMax" ? "Maximum" : "Minimum"} dnes${dn[when] ? ` o ${hhmm(dn[when])}` : ""}${dn.pokrytie < 0.9 ? `, z ${Math.round(dn.pokrytie * 100)} % dňa` : ""}`;
+      return `<td class="num" title="${esc(tip)}" style="color:${key === "tMax" ? "var(--c-temp)" : "var(--c-dew)"}">${dn.pokrytie < 0.9 ? "≈" : ""}${fmt(t)}</td>`;
+    };
     tr.innerHTML = `
       <td class="name">${esc(stName(s))}${isWu(s) ? `<span class="tag ${s.vlastna ? "own" : "wu"}">${s.vlastna ? "moja" : "WU"}</span>` : s.nazov ? `<span class="idx num">${s.id}</span>` : ""}${isSuspect(s) ? `<span class="tag warn">podozrivé</span>` : ""}${isStale(s) ? `<span class="tag">neaktuálne</span>` : ""}</td>
       <td>${tCell}</td>
+      ${dayCell("tMax", "tMaxCas")}${dayCell("tMin", "tMinCas")}
       <td class="num">${v.vlh_rel === undefined ? "—" : fmt(v.vlh_rel, 0) + " %"}</td>
       <td class="num">${arrowSvg(v.vie_pr_smer)} ${fmt(v.vie_pr_rych)}</td>
       <td class="num">${fmt(v.vie_max_rych)}</td>
