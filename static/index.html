@@ -279,6 +279,7 @@ td.name .idx { font-size: 12px; color: var(--muted); margin-left: 6px; }
 .fc-model-seg button::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--mc, var(--muted)); }
 .fc-model-seg button[data-m="aladin"] { --mc: var(--m-aladin); }
 .fc-model-seg button[data-m="icon"] { --mc: var(--m-icon); }
+.fc-model-seg button[data-m="ecmwf"] { --mc: var(--m-ecmwf); }
 .fc-run { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
 .fc-map { position: relative; }
 .fc-map canvas { display: block; width: 100%; height: auto; touch-action: pan-y; }
@@ -484,6 +485,7 @@ const minuteTag = () => Math.floor(Date.now() / 60000);
 const FC_MODELS = {
   aladin: { label: "ALADIN", dir: "data/", popis: "SHMÚ · sieť 4,5 km" },
   icon: { label: "ICON-EU", dir: "data/icon/", popis: "DWD · sieť 7 km, na mape po 0,125° · dáta Open-Meteo", jenStaticky: true },
+  ecmwf: { label: "ECMWF", dir: "data/ecmwf/", popis: "ECMWF IFS · sieť 9 km, na mape po 0,125° · dáta Open-Meteo", jenStaticky: true },
 };
 const runTag = (m) => (fc.models[m].meta && fc.models[m].meta.beh) || 0;
 const URLS = STATIC_MODE ? {

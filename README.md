@@ -155,7 +155,7 @@ sú kroky hodinové, ďalej po 3 hodinách.
 
 ## Ďalšie modely: ICON-EU a ECMWF
 
-- **Mapa ICON-EU** (Nemecká meteorologická služba DWD, sieť 7 km, do +120 hodín) je len na stránke
+- **Mapy ICON-EU** (DWD, sieť 7 km, do +120 h) a **ECMWF IFS** (sieť 9 km, do +144 h, behy 00 a 12 UTC) sú len na stránke
   z GitHubu. `generuj.py` ju sťahuje z bezplatného [Open-Meteo](https://open-meteo.com/) po každom
   behu o 00, 06, 12 a 18 UTC. Na mape sa zobrazuje každý druhý bod siete (po 0,125°, asi 9 až 14 km),
   ktorý stačí na plynulú mapu a šetrí denný limit Open-Meteo. Modely s jemnejšou sieťou (ICON-D2,
